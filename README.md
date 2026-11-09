@@ -18,7 +18,15 @@ Everything runs in the browser. Nothing about the headset is uploaded.
    Headsets you've allowed before are remembered by the browser and listed without asking again.
 3. **Call controls.** The page acts like a softphone. **Ring the headset** sends the Ring state. Then press the headset's buttons: answer, mute, volume up/down, hang up. Each control lights up on the faceplate when its report arrives. The report log shows raw bytes (with changed bytes highlighted) and decoded meanings for every report in and out.
 
-Results can be copied as a text summary, downloaded as a CSV row (for an inventory spreadsheet) or downloaded as a full JSON report including the descriptor.
+4. **Report to your platform's developers.** Pick the platform (Content Guru storm DTA / Web iPath by default, or Genesys Cloud, Talkdesk, Amazon Connect, NICE CXone, Five9, Microsoft Teams, Other). Record whether answer, hang up, mute and volume worked in that platform, and add a case number, your name and notes. The page compares this with its own WebHID results and states the likely cause:
+   - **Likely an issue in [platform]**: a control works over standard WebHID here but not in the platform.
+   - **Headset isn't supported by standard WebHID**: the headset only sends vendor-defined reports.
+   - **Headset supports standard WebHID call control** / **Works here and in [platform]**.
+   - **WebHID is blocked or unavailable in this browser**: fix the browser or policy first.
+
+   **Download report** saves one HTML file the developers can open in any browser: the diagnosis, a side-by-side table (headset reports it, worked here, worked in the platform), tester details and notes, headset and browser details, the full HID descriptor, the report log and the raw JSON (also embedded as `<script type="application/json" id="report-data">` for tooling). **Email the report** downloads it and opens a pre-filled draft in your email app to attach it to. **Copy email text** copies the same draft.
+
+Results can also be copied as a text summary, downloaded as a CSV row (for an inventory spreadsheet, now including the platform results and diagnosis) or downloaded as a full JSON report.
 
 ## Notes
 

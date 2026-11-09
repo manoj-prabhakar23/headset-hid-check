@@ -155,6 +155,21 @@ td.mono{white-space:nowrap}
 .log .dir{font-size:.75rem;font-weight:700;color:var(--muted)}
 .log tr.out .dir{color:var(--led-hold)}
 .log tr.err td{color:var(--fail)}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
+.form label{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:.92rem;min-width:0}
+.form .full{grid-column:1/-1}
+.form [hidden]{display:none}
+.form input,.form select,.form textarea{font:inherit;font-weight:400;font-size:.95rem;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:9px 10px;min-width:0;width:100%}
+.form textarea{resize:vertical;min-height:96px}
+.pr{grid-column:1/-1;border:1px solid var(--line-soft);border-radius:6px;padding:12px 14px 14px;margin:0;min-width:0}
+.pr legend{font-weight:600;font-size:.92rem;padding:0 4px}
+.pr p{margin:0 0 10px;font-size:.85rem;color:var(--muted)}
+.pr-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 16px}
+.pr-grid label{font-weight:600}
+.pr-grid small{font-weight:400;font-size:.8rem;color:var(--muted)}
+.pr-grid small.ok{color:var(--pass);font-weight:600}
+.report-actions{margin-top:16px}
+@media (max-width:700px){.form{grid-template-columns:1fr}.pr-grid{grid-template-columns:1fr 1fr}}
 footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 20px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:6px;font-weight:600;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -235,6 +250,47 @@ footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wra
           </table>
         </div>
         <div class="log-head"><button class="linkbtn" id="resetTests" type="button">Reset call control results</button></div>
+      </section>
+
+      <section class="step" aria-labelledby="s4">
+        <div class="step-head"><span class="num" aria-hidden="true">4</span><h2 id="s4">Report to your platform's developers</h2>
+          <p>Record how the same headset behaves in your contact center app, then send the report to the platform's developers. It shows whether the headset supports standard WebHID call control, so they can tell a platform issue from an unsupported headset.</p></div>
+        <form class="form" id="reportForm" onsubmit="return false">
+          <label>Platform and softphone
+            <select id="rPlatform">
+              <option value="storm-dta">Content Guru storm DTA (Web iPath)</option>
+              <option value="genesys">Genesys Cloud (WebRTC phone)</option>
+              <option value="talkdesk">Talkdesk</option>
+              <option value="connect">Amazon Connect (CCP)</option>
+              <option value="cxone">NICE CXone</option>
+              <option value="five9">Five9</option>
+              <option value="teams">Microsoft Teams</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label id="rOtherWrap" hidden>Platform name<input id="rOther" type="text" placeholder="Name and version of the softphone"></label>
+          <fieldset class="pr">
+            <legend>What happened in that platform</legend>
+            <p>Make or take a test call in the platform with this headset, then record each button.</p>
+            <div class="pr-grid">
+              <label>Answer<select id="pr-answer"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-answer"></small></label>
+              <label>Hang up<select id="pr-hangup"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-hangup"></small></label>
+              <label>Mute<select id="pr-mute"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-mute"></small></label>
+              <label>Volume +/−<select id="pr-volume"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-volume"></small></label>
+            </div>
+          </fieldset>
+          <label>Case or ticket number<input id="rTicket" type="text" autocomplete="off"></label>
+          <label>Your name and company<input id="rTester" type="text" autocomplete="name"></label>
+          <label class="full">Send to (email address of the developer or support team)<input id="rEmail" type="email" autocomplete="email" placeholder="name@example.com"></label>
+          <label class="full">Notes<textarea id="rNotes" placeholder="Steps you took in the platform, what you expected, what happened, browser extensions or vendor apps running"></textarea></label>
+        </form>
+        <div id="diagnosis" aria-live="polite"></div>
+        <div class="actions report-actions">
+          <button class="btn" id="dlReport" type="button">Download report</button>
+          <button class="btn secondary" id="emailReport" type="button">Email the report</button>
+          <button class="btn secondary" id="copyEmail" type="button">Copy email text</button>
+        </div>
+        <p class="hint">The report is a single HTML file that opens in any browser and includes the full technical data: HID descriptor, report log and raw JSON. <b>Email the report</b> downloads it and opens a draft in your email app; attach the downloaded file before sending.</p>
       </section>
     </main>
   </div>
@@ -646,7 +702,7 @@ function onInput(e, di){
     }
   }
   addLog({ dir:"in", rid:e.reportId, bytes, prev, meaning: out.join("; ") || (rep ? "No change in known controls" : "") });
-  renderPlate(); renderRail();
+  renderPlate(); renderRail(); renderReport();
 }
 
 /* ---------- Log ---------- */
@@ -808,7 +864,7 @@ function renderPlate(){
     ? "This headset exposes no call-state outputs, so these buttons only change this page's own call state. Some DECT bases only send button presses while ringing or in a call."
     : "Some DECT bases only send button presses while ringing or in a call, so start with Ring the headset if nothing appears.";
 }
-function render(){ renderEnv(); renderRail(); renderBrowser(); renderDevices(); renderDeviceCard(); renderPlate(); }
+function render(){ renderEnv(); renderRail(); renderBrowser(); renderDevices(); renderDeviceCard(); renderPlate(); renderReport(); }
 
 /* ---------- Export ---------- */
 function snapshot(){
@@ -831,13 +887,15 @@ function summaryText(){
   } else lines.push("Headset: not tested");
   return lines.join("\n");
 }
-const CSV_HEAD = ["Tested at","Browser","Browser version","OS","Browser allows WebHID","Headset","Vendor","VID","PID","Headset works with WebHID","Telephony collection","Call button reported","Mute reported","Volume reported","In-call LED output","Ring output","Mute LED output","Answer tested","Hang up tested","Mute tested","Volume up tested","Volume down tested","Remote call control"];
+const CSV_HEAD = ["Tested at","Browser","Browser version","OS","Browser allows WebHID","Headset","Vendor","VID","PID","Headset works with WebHID","Telephony collection","Call button reported","Mute reported","Volume reported","In-call LED output","Ring output","Mute LED output","Answer tested","Hang up tested","Mute tested","Volume up tested","Volume down tested","Remote call control","Platform","Platform answer","Platform hang up","Platform mute","Platform volume","Case or ticket","Diagnosis"];
 function csvRow(){
   const { b, bv, dv, rv, c, t } = snapshot();
   const vals = [new Date().toISOString(), b.name, b.version, b.os, bv.pill,
     S ? S.name : "", S ? (VENDORS[S.vendorId] || "") : "", S ? hex(S.vendorId) : "", S ? hex(S.productId) : "", S ? dv.pill : "Not tested",
     c && YN(c.telephony), c && YN(c.hook), c && YN(c.mute), c && YN(c.vol), c && YN(c.ledOffHook), c && YN(c.ledRing), c && YN(c.ledMute),
     t && YN(t.answer), t && YN(t.hangup), t && YN(t.mute), t && YN(t.volUp), t && YN(t.volDown), S ? rv.pill : "Not tested"];
+  const pc = platformCheck(), prTxt = v => ({ works:"Works", fails:"Doesn't work" })[v] || "Not tried";
+  vals.push(pc.platform, prTxt(pc.results.answer), prTxt(pc.results.hangup), prTxt(pc.results.mute), prTxt(pc.results.volume), pc.ticket, pc.diagnosis.title);
   const q = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   return CSV_HEAD.map(q).join(",") + "\r\n" + vals.map(q).join(",") + "\r\n";
 }
@@ -854,6 +912,7 @@ function fullReport(){
     headset: S ? { name:S.name, vendor:VENDORS[S.vendorId] || null, vendorId:hex(S.vendorId), productId:hex(S.productId), verdict:dv, capabilities:c,
       interfaces:S.devs.map(d => ({ opened:d.opened, collections:(d.collections || []).map(plainCollection) })) } : null,
     callControl: S ? { verdict:rv, tests:t } : null,
+    platformCheck: platformCheck(),
     log: logRows.slice(0, 200).map(r => ({ time:r.time, dir:r.dir, reportId:r.rid, bytes:r.bytes ? [...r.bytes].map(hb).join(" ") : null, meaning:r.meaning })) };
 }
 function download(name, text, type){
@@ -866,6 +925,177 @@ async function copy(text){
   catch { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast("Summary copied."); } catch { toast("Copy isn't allowed here."); } ta.remove(); }
 }
 function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), 2200); }
+
+/* ---------- Report for platform developers ---------- */
+const PR_KEYS = [["answer","Answer"],["hangup","Hang up"],["mute","Mute"],["volume","Volume +/−"]];
+const store = {
+  get(k){ try { return localStorage.getItem("hhc." + k) || ""; } catch { return ""; } },
+  set(k, v){ try { localStorage.setItem("hhc." + k, v); } catch {} }
+};
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const listText = a => a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+function platformName(){
+  const sel = $("#rPlatform");
+  if (sel.value === "other") return $("#rOther").value.trim() || "the platform";
+  return sel.options[sel.selectedIndex].text;
+}
+function platformResults(){ const o = {}; for (const [k] of PR_KEYS) o[k] = $("#pr-" + k).value; return o; }
+function hereResults(){ const t = S ? S.tests : {}; return { answer:!!t.answer, hangup:!!t.hangup, mute:!!t.mute, volume:!!(t.volUp && t.volDown) }; }
+const PR_LABEL = k => PR_KEYS.find(x => x[0] === k)[1].toLowerCase();
+function diagnosis(){
+  const name = platformName(), bv = browserVerdict(), dv = deviceVerdict(), here = hereResults(), pr = platformResults();
+  if (bv.cls === "no") return { cls:"no", title:"WebHID is blocked or unavailable in this browser", text:`${bv.note} No web softphone, including ${name}, can use the headset's buttons in this browser until that's fixed.` };
+  if (!S || !S.opened.length) return { cls:"", title:"Test a headset first", text:"Choose a headset in step 2 and run the call control test in step 3. The report is most useful once both are done." };
+  if (dv.pill === "Vendor only") return { cls:"warn", title:"Headset isn't supported by standard WebHID", text:`${S.name} only sends vendor-defined reports. A web softphone can't use its buttons through standard WebHID, so ${name} would need the manufacturer's software or SDK, or a headset with standard telephony controls.` };
+  if (dv.cls === "no") return { cls:"no", title:"Headset exposes no call controls over WebHID", text:`${dv.note} This is a limitation of the headset, not of ${name}.` };
+  const failing = PR_KEYS.map(x => x[0]).filter(k => pr[k] === "fails");
+  const platformSide = failing.filter(k => here[k]);
+  const headsetSide = failing.filter(k => !here[k]);
+  const partNote = dv.pill === "Partly" ? " The headset can't receive call state over WebHID, so no web softphone can ring it or keep its call light in sync." : "";
+  const alsoHeadset = headsetSide.length ? ` ${cap(listText(headsetSide.map(PR_LABEL)))} ${headsetSide.length > 1 ? "weren't" : "wasn't"} detected here either, so ${headsetSide.length > 1 ? "those point" : "that points"} to the headset.` : "";
+  if (platformSide.length){
+    const many = platformSide.length > 1;
+    return { cls:"warn", title:`Likely an issue in ${name}`, text:`${cap(listText(platformSide.map(PR_LABEL)))} ${many ? "work" : "works"} over standard WebHID in this browser on this computer but ${many ? "don't" : "doesn't"} work in ${name}. The headset sends standard telephony reports, so the platform's headset integration should be checked: whether it uses WebHID for this vendor, and which report IDs and usages it listens for.${alsoHeadset}${partNote}` };
+  }
+  const done = here.answer && here.hangup && here.mute;
+  if (!done){
+    const n = [here.answer, here.hangup, here.mute].filter(Boolean).length;
+    return { cls:"warn", title:"Live test not finished", text:`${n} of 3 required controls (answer, hang up, mute) were detected here. Finish step 3 so the report shows whether the headset itself works.${alsoHeadset}${partNote}` };
+  }
+  const tried = PR_KEYS.map(x => x[0]).filter(k => pr[k]);
+  if (tried.length && tried.every(k => pr[k] === "works")) return { cls:"yes", title:`Works here and in ${name}`, text:`Answer, hang up and mute work over WebHID in this browser, and every control you tried also works in ${name}.${partNote}` };
+  return { cls:"yes", title:"Headset supports standard WebHID call control", text:`Answer, hang up and mute all work over WebHID in this browser on this computer.${alsoHeadset || ` Record how the headset behaves in ${name} above to complete the report.`}${partNote}` };
+}
+function platformCheck(){
+  return { platform: platformName(), platformId: $("#rPlatform").value, results: platformResults(), detectedHere: hereResults(),
+    ticket: $("#rTicket").value.trim(), tester: $("#rTester").value.trim(), sendTo: $("#rEmail").value.trim(), notes: $("#rNotes").value.trim(), diagnosis: diagnosis() };
+}
+function renderReport(){
+  $("#rOtherWrap").hidden = $("#rPlatform").value !== "other";
+  const here = hereResults();
+  for (const [k] of PR_KEYS){
+    const el = $("#here-" + k);
+    el.textContent = !S ? "" : here[k] ? "Here: detected" : "Here: not detected yet";
+    el.className = here[k] ? "ok" : "";
+  }
+  const d = diagnosis();
+  $("#diagnosis").innerHTML = `<div class="callout ${d.cls}"><p><b>${esc(d.title)}</b></p><p>${esc(d.text)}</p></div>`;
+}
+function reportHtml(){
+  const r = fullReport(), pc = r.platformCheck, d = pc.diagnosis, h = r.headset, c = h ? h.capabilities : null, b = r.browser;
+  const yn = v => v == null ? "–" : v ? "Yes" : "No";
+  const prTxt = v => ({ works:"Works", fails:"Doesn't work" })[v] || "Not tried";
+  const kv = pairs => `<table class="kv">${pairs.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>`;
+  const toolUrl = location.origin + location.pathname;
+  const ctl = [
+    ["Answer", c && c.hook, pc.detectedHere.answer, pc.results.answer],
+    ["Hang up", c && c.hook, pc.detectedHere.hangup, pc.results.hangup],
+    ["Mute", c && c.mute, pc.detectedHere.mute, pc.results.mute],
+    ["Volume +/−", c && c.vol, pc.detectedHere.volume, pc.results.volume]
+  ].map(([n, rep, here, plat]) => `<tr><th>${n}</th><td>${h ? yn(rep) : "–"}</td><td>${h ? yn(here) : "–"}</td><td class="${plat === "fails" ? "bad" : plat === "works" ? "good" : ""}">${prTxt(plat)}</td></tr>`).join("");
+  let desc = "";
+  if (h){
+    const rows = [];
+    const nm = x => x ? usageName(parseInt(x, 16)) : "";
+    const walk = (col, ii, path) => {
+      const reps = [];
+      for (const [type, key] of [["In","inputReports"],["Out","outputReports"],["Feature","featureReports"]]){
+        for (const rp of col[key]){
+          const names = rp.items.map(it => it.isConstant ? `padding ${it.reportSize * it.reportCount}b` : it.usages.length ? [...new Set(it.usages.map(nm))].join(", ") : `${nm(it.usageMinimum)} … ${nm(it.usageMaximum)}`);
+          reps.push(`<b>${type}</b> ID ${rp.reportId}: ${esc(names.join(", ") || "(no usages)")}`);
+        }
+      }
+      rows.push(`<tr><td>${ii + 1}</td><td>${path}</td><td>${esc(col.usagePage)}:${esc(col.usage)} ${esc(col.name)}</td><td>${reps.join("<br>") || "No reports"}</td></tr>`);
+      col.children.forEach((ch, i) => walk(ch, ii, path + "." + (i + 1)));
+    };
+    h.interfaces.forEach((itf, ii) => itf.collections.forEach((col, i) => walk(col, ii, String(i + 1))));
+    desc = `<table><thead><tr><th>Interface</th><th>Collection</th><th>Usage page:usage</th><th>Reports</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  }
+  const log = r.log.length ? `<table><thead><tr><th>Time</th><th>Dir</th><th>Report ID</th><th>Bytes</th><th>Meaning</th></tr></thead><tbody>${r.log.map(l => `<tr><td class="mono">${esc(l.time)}</td><td>${esc(l.dir)}</td><td class="mono">${l.reportId ?? ""}</td><td class="mono">${esc(l.bytes || "")}</td><td>${esc(l.meaning || "")}</td></tr>`).join("")}</tbody></table>` : "<p>No reports were logged.</p>";
+  const json = JSON.stringify(r, null, 2);
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Headset WebHID report: ${esc(h ? h.name : "no headset")}</title>
+<style>
+body{margin:0;background:#fff;color:#16212C;font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:920px;margin:0 auto;padding:32px 20px 56px}
+h1{font-size:1.6rem;margin:0 0 4px}h2{font-size:1.15rem;margin:32px 0 10px;padding-top:16px;border-top:1px solid #DFE5EB}
+.meta{color:#56636F;margin:0 0 20px}
+.callout{padding:14px 16px;border-radius:6px;background:#F3F5F8;border-left:5px solid #C9D1DA}
+.callout.yes{border-left-color:#17734A}.callout.warn{border-left-color:#B07A00}.callout.no{border-left-color:#AE2A22}
+.callout p{margin:0 0 6px}.callout p:last-child{margin:0}
+table{border-collapse:collapse;width:100%;font-size:.88rem}
+th,td{text-align:left;vertical-align:top;padding:6px 8px;border-bottom:1px solid #DFE5EB}
+thead th{color:#56636F;font-weight:600}
+.kv th{width:34%;font-weight:600}
+td.bad{color:#AE2A22;font-weight:700}td.good{color:#17734A;font-weight:700}
+.mono,pre{font-family:ui-monospace,Consolas,monospace;font-size:.82rem}
+pre{white-space:pre-wrap;word-break:break-all;background:#F3F5F8;padding:12px;border-radius:6px}
+.notes{white-space:pre-wrap}
+.wrap-x{overflow-x:auto}
+@media print{h2{break-after:avoid}details{display:block}details>*{display:block}}
+</style></head><body><main>
+<h1>Headset WebHID report</h1>
+<p class="meta">${esc(h ? h.name : "No headset tested")}, tested ${esc(new Date(r.testedAt).toLocaleString())} with ${esc(pc.platform)}${pc.ticket ? ", case " + esc(pc.ticket) : ""}</p>
+<div class="callout ${d.cls}"><p><b>${esc(d.title)}</b></p><p>${esc(d.text)}</p></div>
+
+<h2>Call controls: this test compared with ${esc(pc.platform)}</h2>
+<div class="wrap-x"><table><thead><tr><th>Control</th><th>Headset reports it over WebHID</th><th>Worked over WebHID in this test</th><th>In ${esc(pc.platform)}</th></tr></thead><tbody>${ctl}</tbody></table></div>
+${c ? `<h2>Call state a web softphone can send to the headset</h2>${kv([["Ring (Ring LED or Ringer)", yn(c.ledRing)], ["In call (Off-Hook LED)", yn(c.ledOffHook)], ["Mute indicator (Mute LED)", yn(c.ledMute)], ["Hold indicator (Hold LED)", yn(c.ledHold)]])}` : ""}
+
+<h2>Tester</h2>
+${kv([["Name and company", pc.tester || "–"], ["Case or ticket", pc.ticket || "–"], ["Platform and softphone", pc.platform]])}
+<p class="notes">${pc.notes ? esc(pc.notes) : "No notes."}</p>
+
+<h2>Headset</h2>
+${h ? kv([["Name", h.name], ["Vendor", h.vendor || "Unknown"], ["USB vendor ID", h.vendorId], ["USB product ID", h.productId], ["HID interfaces", String(h.interfaces.length) + " (" + h.interfaces.filter(i => i.opened).length + " opened)"], ["WebHID verdict", h.verdict.pill + ". " + h.verdict.note], ["Telephony collection (0x0B)", yn(c.telephony)], ["Hook Switch input", yn(c.hook)], ["Phone Mute / Consumer Mute input", yn(c.phoneMute) + " / " + yn(c.consumerMute)], ["Volume input", yn(c.vol)]]) : "<p>No headset was tested.</p>"}
+
+<h2>Browser and computer</h2>
+${kv([["Browser", `${b.name} ${b.version || ""}`], ["Operating system", b.os || "–"], ["User agent", r.userAgent], ["WebHID available", yn(b.webhid)], ["Secure context", yn(b.secureContext)], ["Running in an iframe", yn(b.inIframe)], ["Permissions policy allows hid", b.permissionsPolicyAllowsHid == null ? "Not reported" : yn(b.permissionsPolicyAllowsHid)], ["Device chooser opened", b.chooserOpened ? "Yes" : "Not confirmed"], ["Blocked by setting or policy", yn(b.blocked)], ["Browser verdict", b.verdict.pill + ". " + b.verdict.note], ...(b.lastError ? [["Last error", b.lastError]] : [])])}
+
+${h ? `<h2>HID descriptor</h2><div class="wrap-x">${desc}</div>` : ""}
+
+<h2>Report log</h2>
+<p class="meta">Bytes are the report payload after the report ID, as delivered to the WebHID <span class="mono">inputreport</span> event or passed to <span class="mono">sendReport()</span>. Newest first.</p>
+<div class="wrap-x">${log}</div>
+
+<h2>Raw data</h2>
+<details><summary>Full report as JSON</summary><pre>${esc(json)}</pre></details>
+<p class="meta">Produced by Headset HID check: ${esc(toolUrl)}</p>
+</main>
+<script type="application/json" id="report-data">${json.replace(/</g, "\\u003c")}<\/script>
+</body></html>`;
+}
+const reportFileName = () => "headset-report-" + (S ? S.name.replace(/[^\w-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") : "browser") + "-" + new Date().toISOString().slice(0, 10) + ".html";
+function emailParts(){
+  const pc = platformCheck(), d = pc.diagnosis, b = B.info || {}, here = pc.detectedHere;
+  const prTxt = v => ({ works:"works", fails:"doesn't work" })[v] || "not tried";
+  const subject = `Headset WebHID report: ${S ? S.name : "headset"} with ${pc.platform}${pc.ticket ? ` (case ${pc.ticket})` : ""}`;
+  const lines = [
+    "Hello,", "",
+    `Please review the attached headset test report for ${pc.platform}.`, "",
+    `Result: ${d.title}`, d.text, ""
+  ];
+  if (S){
+    lines.push(`Headset: ${S.name} (${VENDORS[S.vendorId] || "unknown vendor"}, VID ${hex(S.vendorId)}, PID ${hex(S.productId)})`);
+    lines.push(`Headset over WebHID: ${deviceVerdict().pill}`);
+    lines.push(`Detected over WebHID in this test: answer ${YN(here.answer)}, hang up ${YN(here.hangup)}, mute ${YN(here.mute)}, volume ${YN(here.volume)}`);
+    lines.push(`In ${pc.platform}: answer ${prTxt(pc.results.answer)}, hang up ${prTxt(pc.results.hangup)}, mute ${prTxt(pc.results.mute)}, volume ${prTxt(pc.results.volume)}`);
+  }
+  lines.push(`Browser: ${b.name} ${b.version || ""}${b.os ? " on " + b.os : ""}`);
+  if (pc.notes) lines.push("", "Notes:", pc.notes);
+  lines.push("", `The attached file (${reportFileName()}) contains the full HID descriptor, the report log and the raw data. It was produced with ${location.origin + location.pathname}.`);
+  if (pc.tester) lines.push("", pc.tester);
+  return { to: pc.sendTo, subject, body: lines.join("\n") };
+}
+function downloadReport(){ download(reportFileName(), reportHtml(), "text/html"); }
+function emailReport(){
+  downloadReport();
+  const e = emailParts();
+  const href = `mailto:${encodeURIComponent(e.to).replace(/%40/g, "@")}?subject=${encodeURIComponent(e.subject)}&body=${encodeURIComponent(e.body.replace(/\n/g, "\r\n"))}`;
+  const a = document.createElement("a"); a.href = href; document.body.appendChild(a); a.click(); a.remove();
+  toast("Report downloaded. Attach it to the email draft.");
+}
 
 /* ---------- Wiring ---------- */
 $("#choose").addEventListener("click", chooseHeadset);
@@ -885,10 +1115,18 @@ $("#host").addEventListener("click", e => {
   if (a === "end") applyHost({ ring:false, offHook:false, mute:false, hold:false }, "Call ended in page");
 });
 $("#clearLog").addEventListener("click", () => { logRows.length = 0; renderLog(); });
-$("#resetTests").addEventListener("click", () => { if (!S) return; for (const k in S.tests) S.tests[k] = false; renderPlate(); renderRail(); toast("Call control results reset."); });
+$("#resetTests").addEventListener("click", () => { if (!S) return; for (const k in S.tests) S.tests[k] = false; renderPlate(); renderRail(); renderReport(); toast("Call control results reset."); });
 $("#copySummary").addEventListener("click", () => copy(summaryText()));
 $("#downloadCsv").addEventListener("click", () => download(fileBase() + ".csv", csvRow(), "text/csv"));
 $("#downloadJson").addEventListener("click", () => download(fileBase() + ".json", JSON.stringify(fullReport(), null, 2), "application/json"));
+for (const [id, k] of [["#rPlatform","platform"],["#rOther","other"],["#rTester","tester"],["#rEmail","email"]]){ const v = store.get(k); if (v) $(id).value = v; }
+if (!$("#rPlatform").value) $("#rPlatform").value = "storm-dta";
+const saveForm = () => { store.set("platform", $("#rPlatform").value); store.set("other", $("#rOther").value); store.set("tester", $("#rTester").value); store.set("email", $("#rEmail").value); renderReport(); };
+$("#reportForm").addEventListener("input", saveForm);
+$("#reportForm").addEventListener("change", saveForm);
+$("#dlReport").addEventListener("click", () => { downloadReport(); toast("Report downloaded."); });
+$("#emailReport").addEventListener("click", emailReport);
+$("#copyEmail").addEventListener("click", async () => { const e = emailParts(); const text = `Subject: ${e.subject}\n\n${e.body}`; try { await navigator.clipboard.writeText(text); toast("Email text copied."); } catch { copy(text); } });
 
 if (B.hid){
   navigator.hid.addEventListener("connect", async () => {

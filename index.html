@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Headset HID Check</title>
+<meta name="description" content="Check whether your browser and headset support WebHID call control: answer, hang up, mute and volume from the headset's own buttons.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23223040'/%3E%3Cpath d='M8 18v-3a8 8 0 0 1 16 0v3' fill='none' stroke='%23E6EDF4' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='6' y='17' width='5' height='8' rx='2' fill='%23E6EDF4'/%3E%3Crect x='21' y='17' width='5' height='8' rx='2' fill='%23E6EDF4'/%3E%3Ccircle cx='24.5' cy='7.5' r='3' fill='%232FC57E'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E8ECF0; --panel:#FFFFFF; --panel-2:#F3F5F8; --ink:#16212C; --muted:#56636F; --line:#C9D1DA; --line-soft:#DFE5EB;
+  --pass:#17734A; --pass-bg:#DCF0E5; --fail:#AE2A22; --fail-bg:#F8E1DF; --warn:#835500; --warn-bg:#FAEBC9; --idle:#5F6B77; --idle-bg:#E2E7EC;
+  --focus:#2D6BE0; --mark:#FFE58A; --mark-ink:#16212C;
+  --plate:#223040; --plate-2:#2D3D4F; --plate-ink:#E6EDF4; --plate-muted:#9AAABB; --plate-line:#3D5064;
+  --led-ring:#F5A524; --led-call:#2FC57E; --led-mute:#F0524F; --led-hold:#5B8DEF;
+  --btn:#16212C; --btn-ink:#FFFFFF; --btn-2:#FFFFFF; --btn-2-ink:#16212C;
+  --font:"Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"Atkinson Hyperlegible Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161D; --panel:#18212B; --panel-2:#1E2833; --ink:#E4EAF0; --muted:#9DABB8; --line:#2F3C4A; --line-soft:#26313E;
+    --pass:#62D9A0; --pass-bg:#16362A; --fail:#FF8F85; --fail-bg:#3C1F1D; --warn:#F2C062; --warn-bg:#3B2F14; --idle:#9DABB8; --idle-bg:#25313D;
+    --focus:#86ADFF; --mark:#6B5A12; --mark-ink:#FFF3C4;
+    --plate:#0B1117; --plate-2:#17212B; --plate-line:#2B3947;
+    --btn:#E4EAF0; --btn-ink:#10161D; --btn-2:#1E2833; --btn-2-ink:#E4EAF0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10161D; --panel:#18212B; --panel-2:#1E2833; --ink:#E4EAF0; --muted:#9DABB8; --line:#2F3C4A; --line-soft:#26313E;
+  --pass:#62D9A0; --pass-bg:#16362A; --fail:#FF8F85; --fail-bg:#3C1F1D; --warn:#F2C062; --warn-bg:#3B2F14; --idle:#9DABB8; --idle-bg:#25313D;
+  --focus:#86ADFF; --mark:#6B5A12; --mark-ink:#FFF3C4;
+  --plate:#0B1117; --plate-2:#17212B; --plate-line:#2B3947;
+  --btn:#E4EAF0; --btn-ink:#10161D; --btn-2:#1E2833; --btn-2-ink:#E4EAF0;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 var(--font)}
+a{color:inherit;text-underline-offset:3px}
+button{font:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.wrap{max-width:1160px;margin:0 auto;padding:28px 24px 64px}
+.masthead{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:24px}
+.masthead h1{font-size:1.85rem;line-height:1.15;margin:0 0 6px;font-weight:700;letter-spacing:-.01em}
+.masthead p{margin:0;color:var(--muted);max-width:62ch}
+.env{font-size:.875rem;color:var(--muted);text-align:right}
+.env strong{color:var(--ink);font-weight:600}
+.grid{display:grid;grid-template-columns:272px minmax(0,1fr);gap:24px;align-items:start}
+.rail{position:sticky;top:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px}
+.rail h2{font-size:1rem;margin:0 0 12px}
+.verdict{padding:12px 0;border-top:1px solid var(--line-soft)}
+.verdict:first-of-type{border-top:0;padding-top:0}
+.verdict .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.verdict .label{font-weight:600;font-size:.95rem}
+.verdict .note{margin:4px 0 0;font-size:.85rem;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:.8rem;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--idle-bg);color:var(--idle)}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.yes{background:var(--pass-bg);color:var(--pass)}
+.pill.no{background:var(--fail-bg);color:var(--fail)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.ticks{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:.85rem;color:var(--muted)}
+.ticks li.ok{color:var(--pass);font-weight:600}
+.ticks li::before{content:"\2013\00a0"}
+.ticks li.ok::before{content:"\2713\00a0"}
+.export{display:flex;flex-direction:column;gap:8px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line-soft)}
+.btn{appearance:none;border:1px solid var(--btn);background:var(--btn);color:var(--btn-ink);border-radius:6px;padding:9px 14px;font-weight:600;font-size:.95rem;cursor:pointer;line-height:1.2;text-align:center}
+.btn.secondary{background:var(--btn-2);color:var(--btn-2-ink);border-color:var(--line)}
+.btn.small{padding:6px 10px;font-size:.85rem}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.linkbtn{appearance:none;border:0;background:none;padding:0;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer;font-size:.85rem}
+.steps{display:flex;flex-direction:column;gap:20px;min-width:0}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:24px;min-width:0}
+.step-head{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;align-items:baseline;margin-bottom:16px}
+.num{grid-row:span 2;font-size:2.4rem;line-height:1;font-weight:700;color:var(--line);font-variant-numeric:tabular-nums}
+.step-head h2{margin:0;font-size:1.3rem;line-height:1.25}
+.step-head p{margin:0;color:var(--muted);max-width:70ch}
+.checks{list-style:none;margin:0;padding:0;border:1px solid var(--line-soft);border-radius:6px}
+.checks li{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:11px 14px;border-top:1px solid var(--line-soft);align-items:center}
+.checks li:first-child{border-top:0}
+.checks .what{font-weight:600}
+.checks .why{grid-column:1/-1;font-size:.875rem;color:var(--muted);margin-top:-2px}
+.checks .why code,.mono{font-family:var(--mono);font-size:.85em}
+.callout{margin:14px 0 0;padding:12px 14px;border-radius:6px;background:var(--panel-2);border-left:4px solid var(--line);font-size:.92rem}
+.callout.no{border-left-color:var(--fail)}
+.callout.warn{border-left-color:var(--warn)}
+.callout.yes{border-left-color:var(--pass)}
+.callout p{margin:0 0 6px}.callout p:last-child{margin:0}
+.callout ul{margin:4px 0 0;padding-left:20px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.check-inline{display:inline-flex;align-items:center;gap:8px;font-size:.9rem;color:var(--muted);cursor:pointer}
+.check-inline input{width:16px;height:16px;accent-color:var(--btn)}
+.subhead{font-size:1rem;margin:22px 0 10px}
+.devlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.devlist li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:10px 14px;border:1px solid var(--line-soft);border-radius:6px;background:var(--panel-2)}
+.devlist li.current{border-color:var(--pass)}
+.devlist .name{font-weight:600}
+.devlist .meta{font-size:.85rem;color:var(--muted)}
+.empty{color:var(--muted);font-size:.92rem;margin:0}
+.devcard{margin-top:18px;border:1px solid var(--line-soft);border-radius:6px;overflow:hidden}
+.devcard-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px;padding:14px;background:var(--panel-2);border-bottom:1px solid var(--line-soft)}
+.devcard-head h3{margin:0;font-size:1.1rem}
+.devcard-head .meta{font-size:.85rem;color:var(--muted)}
+.devcard .checks{border:0;border-radius:0}
+details.desc{border-top:1px solid var(--line-soft)}
+details.desc summary{cursor:pointer;padding:12px 14px;font-weight:600;font-size:.92rem}
+.desc-body{padding:0 14px 14px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{text-align:left;vertical-align:top;padding:6px 8px;border-bottom:1px solid var(--line-soft)}
+th{font-weight:600;color:var(--muted);white-space:nowrap}
+td.mono{white-space:nowrap}
+
+/* Faceplate: the headset base, drawn as hardware */
+.plate{position:relative;background:var(--plate);color:var(--plate-ink);border-radius:20px;padding:20px 20px 22px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.18)}
+.plate.off .keys,.plate.off .leds{opacity:.35}
+.plate-cover{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:24px;font-weight:600;color:var(--plate-ink);z-index:2}
+.plate.off .plate-cover{display:flex}
+.leds{display:flex;flex-wrap:wrap;gap:10px 22px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--plate-line)}
+.led{display:inline-flex;align-items:center;gap:8px;font-size:.88rem;color:var(--plate-muted)}
+.led i{width:12px;height:12px;border-radius:50%;background:var(--plate-2);box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+.led.on{color:var(--plate-ink)}
+.led[data-led="ring"].on i{background:var(--led-ring);box-shadow:0 0 10px var(--led-ring);animation:blink 1s steps(2,start) infinite}
+.led[data-led="call"].on i{background:var(--led-call);box-shadow:0 0 10px var(--led-call)}
+.led[data-led="mute"].on i{background:var(--led-mute);box-shadow:0 0 10px var(--led-mute)}
+.led[data-led="hold"].on i{background:var(--led-hold);box-shadow:0 0 10px var(--led-hold)}
+.led small{font-size:.75rem;color:var(--plate-muted);opacity:.8}
+@keyframes blink{to{visibility:hidden}}
+.keys{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:12px}
+.key{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px 12px;border-radius:14px;background:var(--plate-2);border:1px solid var(--plate-line);text-align:center;transition:border-color .15s, box-shadow .15s}
+.key svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;color:var(--plate-muted)}
+.key b{font-size:.95rem;font-weight:600}
+.key small{font-size:.78rem;color:var(--plate-muted)}
+.key.ok{border-color:var(--led-call)}
+.key.ok svg{color:var(--led-call)}
+.key.ok small{color:var(--led-call)}
+.key.na{background:repeating-linear-gradient(135deg,transparent 0 6px,rgba(255,255,255,.035) 6px 12px);border-style:dashed}
+.key.na b{color:var(--plate-muted)}
+.key.hit{border-color:var(--plate-ink);box-shadow:0 0 0 3px rgba(255,255,255,.18)}
+.key.hit svg{color:var(--plate-ink)}
+.guide{margin:16px 0 0;font-size:1.05rem;font-weight:600;min-height:1.6em}
+.host{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.hint{font-size:.85rem;color:var(--muted);margin:10px 0 0}
+.log-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:24px 0 8px}
+.log-head h3{margin:0;font-size:1rem}
+.log-scroll{max-height:340px;overflow:auto;border:1px solid var(--line-soft);border-radius:6px}
+.log td,.log th{padding:5px 8px}
+.log th{position:sticky;top:0;background:var(--panel-2)}
+.log .bytes{font-family:var(--mono);font-size:.8rem;white-space:nowrap}
+.log mark{background:var(--mark);color:var(--mark-ink);border-radius:2px;padding:0 1px}
+.log .dir{font-size:.75rem;font-weight:700;color:var(--muted)}
+.log tr.out .dir{color:var(--led-hold)}
+.log tr.err td{color:var(--fail)}
+footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 20px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:6px;font-weight:600;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+@media (max-width:900px){.grid{grid-template-columns:1fr}.rail{position:static}.env{text-align:left}}
+@media (max-width:560px){.wrap{padding:18px 16px 48px}.step{padding:18px 16px}.masthead h1{font-size:1.5rem}.num{font-size:1.9rem}.keys{grid-template-columns:repeat(2,minmax(0,1fr))}.plate{padding:16px}}
+@media (prefers-reduced-motion: reduce){.led[data-led="ring"].on i{animation:none}.key,.toast{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <h1>Headset HID check</h1>
+      <p>Tests whether this browser and a USB or DECT headset support WebHID call control: answering, hanging up, muting and changing volume from the headset's own buttons.</p>
+    </div>
+    <div class="env" id="env">Detecting browser…</div>
+  </header>
+
+  <div class="grid">
+    <aside class="rail" aria-labelledby="results-title">
+      <h2 id="results-title">Results</h2>
+      <div id="rail"></div>
+      <div class="export">
+        <button class="btn secondary small" id="copySummary" type="button">Copy summary</button>
+        <button class="btn secondary small" id="downloadCsv" type="button">Download CSV row</button>
+        <button class="linkbtn" id="downloadJson" type="button">Download full report (JSON)</button>
+      </div>
+    </aside>
+
+    <main class="steps">
+      <section class="step" aria-labelledby="s1">
+        <div class="step-head"><span class="num" aria-hidden="true">1</span><h2 id="s1">Browser</h2>
+          <p>WebHID needs Chrome or Edge 89 or later on a computer, a secure (HTTPS) page, and no setting or policy blocking it.</p></div>
+        <ul class="checks" id="browserChecks"></ul>
+        <div id="browserCallout"></div>
+      </section>
+
+      <section class="step" aria-labelledby="s2">
+        <div class="step-head"><span class="num" aria-hidden="true">2</span><h2 id="s2">Headset</h2>
+          <p>Choose the headset, its base station or its USB dongle. Headsets you've allowed before are remembered by the browser and listed below without asking again.</p></div>
+        <div class="actions">
+          <button class="btn" id="choose" type="button">Choose a headset</button>
+          <label class="check-inline"><input type="checkbox" id="showAll"> Show every HID device in the list</label>
+        </div>
+        <h3 class="subhead">Remembered headsets</h3>
+        <ul class="devlist" id="devlist"></ul>
+        <div id="devcard"></div>
+      </section>
+
+      <section class="step" aria-labelledby="s3">
+        <div class="step-head"><span class="num" aria-hidden="true">3</span><h2 id="s3">Call controls</h2>
+          <p>This page acts like a softphone. Ring the headset from here, then use the buttons on the headset. Each control lights up when the page receives it.</p></div>
+        <div class="plate off" id="plate">
+          <div class="plate-cover" id="plateCover">Choose a headset in step 2 to start.</div>
+          <div class="leds" aria-label="Call state this page sends to the headset">
+            <span class="led" data-led="ring"><i></i>Ringing</span>
+            <span class="led" data-led="call"><i></i>In call</span>
+            <span class="led" data-led="mute"><i></i>Muted</span>
+            <span class="led" data-led="hold"><i></i>On hold</span>
+          </div>
+          <div class="keys" id="keys"></div>
+        </div>
+        <p class="guide" id="guide" aria-live="polite"></p>
+        <div class="host" id="host">
+          <button class="btn" data-host="ring" type="button">Ring the headset</button>
+          <button class="btn secondary" data-host="answer" type="button">Answer here</button>
+          <button class="btn secondary" data-host="mute" type="button">Mute</button>
+          <button class="btn secondary" data-host="hold" type="button">Hold</button>
+          <button class="btn secondary" data-host="end" type="button">End call</button>
+        </div>
+        <p class="hint" id="hostHint"></p>
+        <div class="log-head"><h3>Report log</h3><button class="linkbtn" id="clearLog" type="button">Clear log</button></div>
+        <div class="log-scroll">
+          <table class="log">
+            <thead><tr><th scope="col">Time</th><th scope="col">Dir</th><th scope="col">Report</th><th scope="col">Bytes</th><th scope="col">Meaning</th></tr></thead>
+            <tbody id="logBody"><tr><td colspan="5" class="empty">Reports from the headset and commands sent to it appear here. Changed bytes are highlighted.</td></tr></tbody>
+          </table>
+        </div>
+        <div class="log-head"><button class="linkbtn" id="resetTests" type="button">Reset call control results</button></div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <span>Runs entirely in your browser. Nothing about your headset is uploaded.</span>
+    <a href="https://wicg.github.io/webhid/" target="_blank" rel="noopener">WebHID specification</a>
+    <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API" target="_blank" rel="noopener">WebHID on MDN</a>
+    <a href="https://usb.org/document-library/hid-usage-tables-15" target="_blank" rel="noopener">HID usage tables</a>
+  </footer>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+(() => {
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hex = (n, w = 4) => "0x" + (Number(n) >>> 0).toString(16).toUpperCase().padStart(w, "0");
+const hb = b => b.toString(16).toUpperCase().padStart(2, "0");
+const now = () => performance.now();
+
+/* ---------- Reference data ---------- */
+const VENDORS = {
+  0x0B0E:"Jabra (GN)", 0x047F:"Poly / Plantronics", 0x095D:"Poly (Polycom)", 0x03F0:"HP",
+  0x1395:"EPOS / Sennheiser", 0x6993:"Yealink", 0x046D:"Logitech", 0x045E:"Microsoft",
+  0x289B:"Cyber Acoustics", 0x3503:"VBeT", 0x17EF:"Lenovo", 0x413C:"Dell"
+};
+const PAGES = {0x01:"Generic Desktop",0x07:"Keyboard",0x08:"LED",0x09:"Button",0x0B:"Telephony",0x0C:"Consumer"};
+const U = (p, id) => p * 0x10000 + id;
+const USAGES = {
+  [U(0x0B,0x01)]:"Phone",[U(0x0B,0x04)]:"Handset",[U(0x0B,0x05)]:"Headset",[U(0x0B,0x06)]:"Telephony Key Pad",[U(0x0B,0x07)]:"Programmable Button",
+  [U(0x0B,0x20)]:"Hook Switch",[U(0x0B,0x21)]:"Flash",[U(0x0B,0x22)]:"Feature",[U(0x0B,0x23)]:"Hold",[U(0x0B,0x24)]:"Redial",[U(0x0B,0x25)]:"Transfer",
+  [U(0x0B,0x26)]:"Drop",[U(0x0B,0x27)]:"Park",[U(0x0B,0x29)]:"Alternate Function",[U(0x0B,0x2A)]:"Line",[U(0x0B,0x2B)]:"Speaker Phone",[U(0x0B,0x2C)]:"Conference",
+  [U(0x0B,0x2D)]:"Ring Enable",[U(0x0B,0x2F)]:"Phone Mute",[U(0x0B,0x30)]:"Caller ID",[U(0x0B,0x31)]:"Send",[U(0x0B,0x50)]:"Speed Dial",[U(0x0B,0x70)]:"Voice Mail",
+  [U(0x0B,0x72)]:"Do Not Disturb",[U(0x0B,0x73)]:"Message",[U(0x0B,0x74)]:"Answer On/Off",[U(0x0B,0x97)]:"Line Busy Tone",[U(0x0B,0x9E)]:"Ringer",
+  [U(0x08,0x08)]:"Do Not Disturb LED",[U(0x08,0x09)]:"Mute LED",[U(0x08,0x17)]:"Off-Hook LED",[U(0x08,0x18)]:"Ring LED",[U(0x08,0x19)]:"Message Waiting LED",
+  [U(0x08,0x1E)]:"Speaker LED",[U(0x08,0x1F)]:"Headset LED",[U(0x08,0x20)]:"Hold LED",[U(0x08,0x21)]:"Microphone LED",[U(0x08,0x2A)]:"On-Line LED",
+  [U(0x08,0x2B)]:"Off-Line LED",[U(0x08,0x2C)]:"Busy LED",
+  [U(0x0C,0x01)]:"Consumer Control",[U(0x0C,0xB0)]:"Play",[U(0x0C,0xB5)]:"Next Track",[U(0x0C,0xB6)]:"Previous Track",[U(0x0C,0xB7)]:"Stop",
+  [U(0x0C,0xCD)]:"Play/Pause",[U(0x0C,0xE0)]:"Volume",[U(0x0C,0xE2)]:"Mute",[U(0x0C,0xE9)]:"Volume Up",[U(0x0C,0xEA)]:"Volume Down",
+  [U(0x01,0x01)]:"Pointer",[U(0x01,0x02)]:"Mouse",[U(0x01,0x06)]:"Keyboard",[U(0x01,0x80)]:"System Control"
+};
+const HOOK=U(0x0B,0x20), PMUTE=U(0x0B,0x2F), CMUTE=U(0x0C,0xE2), VUP=U(0x0C,0xE9), VDN=U(0x0C,0xEA), VOL=U(0x0C,0xE0),
+      FLASH=U(0x0B,0x21), HOLDK=U(0x0B,0x23), REDIAL=U(0x0B,0x24), DROP=U(0x0B,0x26), BUSY=U(0x0B,0x97), PROG=U(0x0B,0x07),
+      LED_OFFHOOK=U(0x08,0x17), LED_RING=U(0x08,0x18), RINGER=U(0x0B,0x9E), LED_MUTE=U(0x08,0x09), LED_HOLD=U(0x08,0x20);
+
+function usageName(u){
+  if (USAGES[u]) return USAGES[u];
+  const p = Math.floor(u / 0x10000), id = u % 0x10000;
+  if (p === 0x0B && id >= 0xB0 && id <= 0xBB) return "Key " + "0123456789*#"[id - 0xB0];
+  if (p === 0x09) return "Button " + id;
+  if (p >= 0xFF00) return `Vendor ${hex(p)}:${hex(id)}`;
+  return `${PAGES[p] || "Page " + hex(p)} ${hex(id)}`;
+}
+const pageName = p => PAGES[p] || (p >= 0xFF00 ? "Vendor-defined " + hex(p) : "Page " + hex(p));
+const ext = (u, page) => (u > 0xFFFF ? u : U(page, u));
+
+/* ---------- State ---------- */
+const B = { info:null, hid:!!(navigator.hid && typeof navigator.hid.requestDevice === "function"), secure:window.isSecureContext, framed:false, policy:null, chooser:null, blocked:false, lastError:"" };
+try { B.framed = window.self !== window.top; } catch { B.framed = true; }
+try { const p = document.permissionsPolicy || document.featurePolicy; if (p && typeof p.allowsFeature === "function") B.policy = p.allowsFeature("hid"); } catch {}
+
+let S = null;               // current test session
+let remembered = [];        // grouped devices the browser remembers
+let lastSessionKey = null;
+const host = { ring:false, offHook:false, mute:false, hold:false };
+const logRows = [];
+
+const KEYS = [
+  {id:"answer", label:"Answer", req:true, cap:c=>c.hook, icon:'<path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>'},
+  {id:"hangup", label:"Hang up", req:true, cap:c=>c.hook, icon:'<path transform="rotate(135 12 12)" d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>'},
+  {id:"mute", label:"Mute", req:true, cap:c=>c.mute, icon:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/>'},
+  {id:"volUp", label:"Volume up", req:false, cap:c=>c.volUp, icon:'<path d="M3 9h4l5-4v14l-5-4H3zM16 12h5M18.5 9.5v5"/>'},
+  {id:"volDown", label:"Volume down", req:false, cap:c=>c.volDown, icon:'<path d="M3 9h4l5-4v14l-5-4H3zM16 12h5"/>'},
+  {id:"flash", label:"Flash / hold", req:false, extra:true, cap:c=>c.flash, icon:'<path d="M9 6v12M15 6v12"/>'},
+  {id:"reject", label:"Reject", req:false, extra:true, cap:c=>c.reject, icon:'<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>'},
+  {id:"redial", label:"Redial", req:false, extra:true, cap:c=>c.redial, icon:'<path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4"/>'},
+  {id:"prog", label:"UC / programmable", req:false, extra:true, cap:c=>c.prog, icon:'<rect x="5" y="5" width="14" height="14" rx="3"/><circle cx="12" cy="12" r="2.2"/>'}
+];
+
+/* ---------- Browser detection ---------- */
+async function detectBrowser(){
+  const ua = navigator.userAgent, uad = navigator.userAgentData;
+  let name = "Unknown browser", version = "", os = "", mobile = /Android|iPhone|iPad|iPod/i.test(ua);
+  if (uad){
+    mobile = !!uad.mobile || mobile;
+    let list = uad.brands || [], platform = uad.platform || "", pver = "";
+    try { const h = await uad.getHighEntropyValues(["fullVersionList","platformVersion"]); list = h.fullVersionList || list; pver = h.platformVersion || ""; } catch {}
+    const pick = re => list.find(b => re.test(b.brand));
+    const b = pick(/Edge/) || pick(/Opera|OPR/) || pick(/Brave/) || pick(/Vivaldi/) || pick(/Google Chrome/) || pick(/Chromium/);
+    if (b){ name = b.brand.replace("Google Chrome","Chrome").replace("Microsoft Edge","Edge"); version = b.version; }
+    os = platform;
+    if (platform === "Windows" && pver) os = parseInt(pver, 10) >= 13 ? "Windows 11" : "Windows 10";
+  } else {
+    let m;
+    if ((m = ua.match(/Firefox\/([\d.]+)/))) { name = "Firefox"; version = m[1]; }
+    else if ((m = ua.match(/Edg\/([\d.]+)/))) { name = "Edge"; version = m[1]; }
+    else if ((m = ua.match(/Chrome\/([\d.]+)/))) { name = "Chrome"; version = m[1]; }
+    else if ((m = ua.match(/Version\/([\d.]+).*Safari/))) { name = "Safari"; version = m[1]; }
+    os = /Windows/.test(ua) ? "Windows" : /Mac OS X/.test(ua) ? (mobile ? "iOS" : "macOS") : /Android/.test(ua) ? "Android" : /CrOS/.test(ua) ? "ChromeOS" : /Linux/.test(ua) ? "Linux" : "";
+  }
+  B.info = { name, version, major: parseInt(version, 10) || 0, os, mobile };
+}
+
+/* ---------- Descriptor parsing ---------- */
+function buildLayout(devs){
+  const L = { input:new Map(), output:new Map(), feature:new Map(), tops:[], ambiguous:false };
+  devs.forEach((dev, di) => {
+    const parts = { input:new Map(), output:new Map(), feature:new Map() };
+    const walk = (col, path) => {
+      for (const [type, key] of [["input","inputReports"],["output","outputReports"],["feature","featureReports"]]){
+        for (const r of col[key] || []){
+          if (!parts[type].has(r.reportId)) parts[type].set(r.reportId, []);
+          parts[type].get(r.reportId).push({ items:r.items || [], page:col.usagePage, path });
+        }
+      }
+      (col.children || []).forEach((ch, i) => walk(ch, path + "." + (i + 1)));
+    };
+    (dev.collections || []).forEach((c, i) => { L.tops.push({ dev:di, col:c, path:String(i + 1) }); walk(c, String(i + 1)); });
+    for (const type of ["input","output","feature"]){
+      for (const [rid, ps] of parts[type]){
+        if (ps.length > 1) L.ambiguous = true;
+        const { fields, bits } = flatten(ps);
+        L[type].set(di + ":" + rid, { dev:di, reportId:rid, fields, bits, paths:ps.map(p => p.path) });
+      }
+    }
+  });
+  return L;
+}
+function flatten(parts){
+  const fields = []; let off = 0;
+  for (const part of parts){
+    for (const it of part.items){
+      const size = it.reportSize | 0, count = it.reportCount | 0, total = size * count;
+      if (it.isConstant || !size || !count){ off += total; continue; }
+      const lmin = it.logicalMinimum ?? 0, lmax = it.logicalMaximum ?? 1;
+      const usages = (it.usages || []).map(u => ext(u, part.page));
+      const umin = it.usageMinimum != null ? ext(it.usageMinimum, part.page) : null;
+      const umax = it.usageMaximum != null ? ext(it.usageMaximum, part.page) : null;
+      for (let i = 0; i < count; i++){
+        const base = { bitOffset: off + i * size, bitSize: size, signed: lmin < 0, lmin, lmax, isAbsolute: it.isAbsolute !== false };
+        if (it.isArray){
+          fields.push({ ...base, isArray:true, list: it.isRange ? null : usages, umin, umax });
+        } else {
+          let u;
+          if ((it.isRange || !usages.length) && umin != null) u = Math.min(umin + i, umax ?? umin + i);
+          else u = usages[Math.min(i, usages.length - 1)];
+          if (u == null) continue;
+          fields.push({ ...base, isArray:false, usage:u });
+        }
+      }
+      off += total;
+    }
+  }
+  return { fields, bits: off };
+}
+function readBits(bytes, off, size, signed){
+  let v = 0;
+  for (let i = 0; i < size; i++){
+    const b = off + i, byte = b >> 3;
+    if (byte >= bytes.length) return null;
+    if ((bytes[byte] >> (b & 7)) & 1) v += 2 ** i;
+  }
+  if (signed && size > 1 && v >= 2 ** (size - 1)) v -= 2 ** size;
+  return v;
+}
+function writeBits(buf, off, size, val){
+  for (let i = 0; i < size; i++){
+    const b = off + i, byte = b >> 3, mask = 1 << (b & 7);
+    if (byte >= buf.length) return;
+    if (Math.floor(val / 2 ** i) % 2) buf[byte] |= mask; else buf[byte] &= ~mask;
+  }
+}
+function arrayUsage(f, v){
+  if (v == null || v < f.lmin || v > f.lmax) return null;
+  const idx = v - f.lmin; let u = null;
+  if (f.list && f.list.length) u = f.list[idx];
+  else if (f.umin != null){ u = f.umin + idx; if (f.umax != null && u > f.umax) return null; }
+  if (u == null || u % 0x10000 === 0) return null;
+  return u;
+}
+const covers = (f, u) => f.isArray ? (f.list && f.list.length ? f.list.includes(u) : (f.umin != null && u >= f.umin && u <= (f.umax ?? f.umin))) : f.usage === u;
+function has(map, u, variableOnly){ for (const r of map.values()) for (const f of r.fields){ if (variableOnly && f.isArray) continue; if (covers(f, u)) return true; } return false; }
+
+function analyse(L){
+  const i = u => has(L.input, u), o = u => has(L.output, u, true);
+  const c = {
+    telephony: L.tops.some(t => t.col.usagePage === 0x0B),
+    hook: i(HOOK), phoneMute: i(PMUTE), consumerMute: i(CMUTE),
+    volUp: i(VUP) || i(VOL), volDown: i(VDN) || i(VOL),
+    flash: i(FLASH) || i(HOLDK), reject: i(BUSY) || i(DROP), redial: i(REDIAL), prog: i(PROG),
+    ledOffHook: o(LED_OFFHOOK), ledRing: o(LED_RING) || o(RINGER), ledMute: o(LED_MUTE), ledHold: o(LED_HOLD)
+  };
+  c.mute = c.phoneMute || c.consumerMute;
+  c.vol = c.volUp || c.volDown;
+  c.outputs = c.ledOffHook || c.ledRing || c.ledMute || c.ledHold;
+  let vendorInputs = 0, inputs = 0;
+  for (const r of L.input.values()) for (const f of r.fields){ inputs++; const u = f.isArray ? (f.list?.[0] ?? f.umin) : f.usage; if (u != null && u >= 0xFF000000) vendorInputs++; }
+  c.vendorInputs = vendorInputs; c.inputs = inputs;
+  return c;
+}
+function deviceVerdict(){
+  if (!S) return { cls:"", pill:"Not tested", note:"Choose a headset in step 2." };
+  if (!S.opened.length) return { cls:"no", pill:"No", note:"The browser couldn't open the headset. " + (S.openErrors[0] || "") };
+  const c = S.caps;
+  if (c.hook && (c.ledOffHook || c.ledRing)) return { cls:"yes", pill:"Yes", note:"Standard telephony controls: buttons in, call state out." };
+  if (c.hook || c.mute) return { cls:"warn", pill:"Partly", note:"Buttons are readable, but the page can't set the headset's call state." };
+  if (c.vendorInputs) return { cls:"warn", pill:"Vendor only", note:"Reports use vendor-defined codes. A softphone needs the vendor's software or SDK." };
+  return { cls:"no", pill:"No", note:"No call controls are exposed over WebHID." };
+}
+function rccVerdict(){
+  if (!S || !S.opened.length) return { cls:"", pill:"Not tested", note:"" };
+  const t = S.tests, n = [t.answer, t.hangup, t.mute].filter(Boolean).length;
+  if (n === 3) return { cls:"yes", pill:"Yes", note:"Answer, hang up and mute all reached the page." };
+  if (n > 0) return { cls:"warn", pill:`${n} of 3`, note:"Keep testing in step 3." };
+  const dv = deviceVerdict();
+  if (dv.cls === "no" || dv.pill === "Vendor only") return { cls:"no", pill:"Not available", note:"Generic WebHID can't read this headset's call buttons." };
+  return { cls:"", pill:"Waiting", note:"Press the headset's buttons in step 3." };
+}
+function browserVerdict(){
+  const b = B.info || {};
+  if (!B.hid){
+    return { cls:"no", pill:"No", note: b.mobile ? "WebHID isn't available on phones or tablets." : `${b.name || "This browser"} doesn't support WebHID.` };
+  }
+  if (!B.secure) return { cls:"no", pill:"Blocked", note:"The page isn't served over HTTPS." };
+  if (B.policy === false) return { cls:"no", pill:"Blocked", note: B.framed ? "The page embedding this tool doesn't allow WebHID." : "A permissions policy blocks WebHID on this page." };
+  if (B.blocked) return { cls:"no", pill:"Blocked", note:"A browser setting or admin policy is blocking access to HID devices." };
+  if (b.major && b.major < 89) return { cls:"warn", pill:"Update", note:"WebHID needs version 89 or later." };
+  return { cls:"yes", pill:"Yes", note: B.chooser ? "The browser opened the device chooser." : "Settings and policies are confirmed when you choose a headset." };
+}
+
+/* ---------- Devices ---------- */
+const groupKey = d => `${d.vendorId}:${d.productId}:${d.productName}`;
+function group(devs){
+  const m = new Map();
+  for (const d of devs){ const k = groupKey(d); if (!m.has(k)) m.set(k, { key:k, name:d.productName || "Unnamed HID device", vendorId:d.vendorId, productId:d.productId, devices:[] }); m.get(k).devices.push(d); }
+  return [...m.values()];
+}
+async function refreshRemembered(){
+  if (!B.hid) { remembered = []; return; }
+  try { remembered = group(await navigator.hid.getDevices()); } catch { remembered = []; }
+}
+function chooserFilters(){
+  if ($("#showAll").checked) return [];
+  return [{ usagePage: 0x0B }, ...Object.keys(VENDORS).map(v => ({ vendorId: Number(v) }))];
+}
+async function chooseHeadset(){
+  if (!B.hid){ toast("WebHID isn't available in this browser."); return; }
+  let blurred = false; const onBlur = () => { blurred = true; };
+  window.addEventListener("blur", onBlur);
+  const t0 = now(); let devs = [];
+  try {
+    devs = await navigator.hid.requestDevice({ filters: chooserFilters() });
+  } catch (e){
+    window.removeEventListener("blur", onBlur);
+    B.lastError = `${e.name}: ${e.message}`;
+    if (e.name === "SecurityError" || e.name === "NotAllowedError") B.blocked = true;
+    render(); return;
+  }
+  window.removeEventListener("blur", onBlur);
+  const dt = now() - t0;
+  if (devs.length){ B.chooser = true; B.blocked = false; }
+  else if (blurred || dt > 900){ B.chooser = true; B.blocked = false; toast("No headset chosen."); }
+  else { B.blocked = true; B.lastError = "The device chooser closed immediately without being shown."; }
+  await refreshRemembered();
+  if (devs.length){ await startSession(group(devs)[0]); }
+  render();
+}
+async function startSession(g){
+  await endSession();
+  const live = remembered.find(r => r.key === g.key);
+  const devices = live ? live.devices : g.devices;
+  const s = { key:g.key, name:g.name, vendorId:g.vendorId, productId:g.productId, devs:devices, opened:[], openErrors:[],
+              lastVal:new Map(), lastRaw:new Map(), arrPrev:new Map(), riseAt:new Map(), outBufs:new Map(), lastSendAt:-1e9,
+              tests:{ answer:false, hangup:false, mute:false, volUp:false, volDown:false, flash:false, reject:false, redial:false, prog:false },
+              handlers:[], connected:true, startedAt:new Date() };
+  for (const d of devices){
+    try { if (!d.opened) await d.open(); s.opened.push(d); }
+    catch (e){ s.openErrors.push(`${e.name}: ${e.message}`); }
+  }
+  s.L = buildLayout(devices);
+  s.caps = analyse(s.L);
+  devices.forEach((d, di) => { const h = e => onInput(e, di); d.addEventListener("inputreport", h); s.handlers.push([d, h]); });
+  S = s; lastSessionKey = g.key;
+  Object.assign(host, { ring:false, offHook:false, mute:false, hold:false });
+  addLog({ dir:"info", meaning:`Testing ${g.name}: ${s.opened.length} of ${devices.length} HID interface(s) opened.` });
+  render();
+}
+async function endSession(){
+  if (!S) return;
+  for (const [d, h] of S.handlers) d.removeEventListener("inputreport", h);
+  for (const d of S.opened){ try { if (d.opened) await d.close(); } catch {} }
+  S = null; render();
+}
+async function forget(key){
+  const g = remembered.find(r => r.key === key); if (!g) return;
+  if (S && S.key === key) await endSession();
+  for (const d of g.devices){ try { if (d.forget) await d.forget(); } catch {} }
+  await refreshRemembered(); render(); toast("Headset forgotten. The browser will ask again next time.");
+}
+
+/* ---------- Call control: host side (page acts as the softphone) ---------- */
+const recentSend = () => S && now() - S.lastSendAt < 500;
+async function applyHost(ch, why){
+  Object.assign(host, ch);
+  if (host.offHook) host.ring = false;
+  if (!host.offHook){ host.mute = false; host.hold = false; }
+  renderPlate();
+  if (!S) return;
+  const want = new Map([[LED_RING, host.ring], [RINGER, host.ring], [LED_OFFHOOK, host.offHook], [LED_MUTE, host.mute], [LED_HOLD, host.hold]]);
+  for (const [key, rep] of S.L.output){
+    const prev = S.outBufs.get(key) || new Uint8Array(Math.ceil(rep.bits / 8));
+    const buf = prev.slice(); let touched = false;
+    for (const f of rep.fields){ if (f.isArray || !want.has(f.usage)) continue; writeBits(buf, f.bitOffset, f.bitSize, want.get(f.usage) ? 1 : 0); touched = true; }
+    if (!touched) continue;
+    if (S.outBufs.has(key) && buf.every((b, i) => b === prev[i])) continue;
+    S.outBufs.set(key, buf);
+    S.lastSendAt = now();
+    try { await S.devs[rep.dev].sendReport(rep.reportId, buf); addLog({ dir:"out", rid:rep.reportId, bytes:buf, meaning: why || stateText() }); }
+    catch (e){ addLog({ dir:"err", rid:rep.reportId, bytes:buf, meaning:`Couldn't send to headset: ${e.name}: ${e.message}` }); }
+  }
+}
+const stateText = () => host.ring ? "Ringing" : host.offHook ? ["In call", host.mute && "muted", host.hold && "on hold"].filter(Boolean).join(", ") : "Idle";
+function hit(id){
+  const el = document.querySelector(`.key[data-key="${id}"]`); if (!el) return;
+  el.classList.remove("hit"); void el.offsetWidth; el.classList.add("hit");
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("hit"), 700);
+}
+function hangUp(why){ hit("hangup"); S.tests.hangup = true; applyHost({ offHook:false, mute:false, hold:false, ring:false }, why); }
+function act(u, edge, v){
+  const n = usageName(u), t = S.tests;
+  switch (u){
+    case HOOK:
+      if (edge === "press"){
+        if (host.offHook){ if (recentSend()) return "Hook Switch on (confirms call state)"; hangUp("Call ended from headset"); return "Call button: hang up"; }
+        const wasRinging = host.ring; hit("answer"); t.answer = true; applyHost({ ring:false, offHook:true }, "Call answered from headset");
+        return wasRinging ? "Call button: answer" : "Call button: off-hook (answer)";
+      }
+      if (host.offHook && !recentSend()){ hangUp("Call ended from headset"); return "Call button: hang up"; }
+      return "Hook Switch off (confirms call state)";
+    case PMUTE: case CMUTE:
+      if (edge === "press"){
+        hit("mute"); t.mute = true;
+        if (!host.offHook) return `${n} pressed (no call active)`;
+        if (recentSend() && host.mute) return `${n} on (confirms mute state)`;
+        const to = !host.mute; applyHost({ mute:to }, to ? "Muted from headset" : "Unmuted from headset");
+        return to ? "Mute button: mute" : "Mute button: unmute";
+      }
+      if (host.offHook && host.mute && !recentSend()){ hit("mute"); t.mute = true; applyHost({ mute:false }, "Unmuted from headset"); return "Mute button: unmute"; }
+      return null;
+    case VUP: if (edge === "press"){ hit("volUp"); t.volUp = true; return "Volume up"; } return null;
+    case VDN: if (edge === "press"){ hit("volDown"); t.volDown = true; return "Volume down"; } return null;
+    case FLASH: case HOLDK:
+      if (edge !== "press") return null;
+      hit("flash"); t.flash = true;
+      if (host.offHook){ const to = !host.hold; applyHost({ hold:to }, to ? "Hold from headset" : "Resumed from headset"); return `${n}: ${to ? "hold" : "resume"}`; }
+      return `${n} pressed`;
+    case BUSY: case DROP:
+      if (edge !== "press") return null;
+      hit("reject"); t.reject = true;
+      if (host.ring){ applyHost({ ring:false }, "Call rejected from headset"); return `${n}: reject call`; }
+      if (u === DROP && host.offHook){ hangUp("Call dropped from headset"); return "Drop: hang up"; }
+      return `${n} pressed`;
+    case REDIAL: if (edge === "press"){ hit("redial"); t.redial = true; return "Redial"; } return null;
+    case PROG: if (edge === "press"){ hit("prog"); t.prog = true; return "Programmable (UC) button"; } return null;
+    default:
+      if (edge === "press") return v != null && v !== 1 ? `${n} = ${v}` : `${n} pressed`;
+      return null;
+  }
+}
+const TOGGLES = new Set([HOOK, PMUTE, CMUTE]);
+function interpret(f, u, old, v){
+  if (u === VOL){
+    let up;
+    if (!f.isAbsolute){ if (!v) return null; up = v > 0; } else { if (v === old) return null; up = v > old; }
+    return act(up ? VUP : VDN, "press");
+  }
+  if (!f.isAbsolute) return v ? act(u, "press", v) : null;
+  if (v && !old){ S.riseAt.set(u, now()); return act(u, "press", v); }
+  if (!v && old){
+    if (!TOGGLES.has(u)) return null;
+    if (now() - (S.riseAt.get(u) ?? -1e9) < 700) return null; // momentary button released
+    return act(u, "release", v);
+  }
+  return v !== old ? act(u, "press", v) : null;
+}
+function onInput(e, di){
+  if (!S) return;
+  const key = di + ":" + e.reportId;
+  const bytes = new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength).slice();
+  const prev = S.lastRaw.get(key); S.lastRaw.set(key, bytes);
+  const rep = S.L.input.get(key); const out = [];
+  if (!rep){ out.push("Report ID not described in the descriptor"); }
+  else {
+    const arrays = [];
+    for (const f of rep.fields){
+      const v = readBits(bytes, f.bitOffset, f.bitSize, f.signed); if (v == null) continue;
+      if (f.isArray){ arrays.push(arrayUsage(f, v)); continue; }
+      const fk = key + ":" + f.bitOffset, old = S.lastVal.get(fk) ?? 0;
+      S.lastVal.set(fk, v);
+      if (f.isAbsolute ? v !== old : v !== 0){ const r = interpret(f, f.usage, old, v); if (r) out.push(r); }
+    }
+    if (rep.fields.some(f => f.isArray)){
+      const nowSet = new Set(arrays.filter(Boolean)), prevSet = S.arrPrev.get(key) || new Set();
+      for (const u of nowSet) if (!prevSet.has(u)){ S.riseAt.set(u, now()); const r = act(u, "press", 1); if (r) out.push(r); }
+      for (const u of prevSet) if (!nowSet.has(u) && TOGGLES.has(u) && now() - (S.riseAt.get(u) ?? -1e9) >= 700){ const r = act(u, "release", 0); if (r) out.push(r); }
+      S.arrPrev.set(key, nowSet);
+    }
+  }
+  addLog({ dir:"in", rid:e.reportId, bytes, prev, meaning: out.join("; ") || (rep ? "No change in known controls" : "") });
+  renderPlate(); renderRail();
+}
+
+/* ---------- Log ---------- */
+function addLog(r){
+  const d = new Date();
+  r.time = d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+  logRows.unshift(r); if (logRows.length > 300) logRows.pop();
+  renderLog();
+}
+function renderLog(){
+  const body = $("#logBody");
+  if (!logRows.length){ body.innerHTML = '<tr><td colspan="5" class="empty">Reports from the headset and commands sent to it appear here. Changed bytes are highlighted.</td></tr>'; return; }
+  body.innerHTML = logRows.map(r => {
+    let bytes = "";
+    if (r.bytes){ bytes = [...r.bytes].map((b, i) => (r.prev && r.prev[i] !== b) ? `<mark>${hb(b)}</mark>` : hb(b)).join(" "); if (!r.bytes.length) bytes = "(empty)"; }
+    const dir = { in:"in", out:"out", err:"error", info:"note" }[r.dir];
+    return `<tr class="${r.dir}"><td class="mono">${r.time}</td><td class="dir">${dir}</td><td class="mono">${r.rid != null ? r.rid : ""}</td><td class="bytes">${bytes}</td><td>${esc(r.meaning)}</td></tr>`;
+  }).join("");
+}
+
+/* ---------- Rendering ---------- */
+function pill(v){ return `<span class="pill ${v.cls}">${esc(v.pill)}</span>`; }
+function renderEnv(){
+  const b = B.info; if (!b) return;
+  $("#env").innerHTML = `<strong>${esc(b.name)}${b.version ? " " + esc(b.version.split(".")[0]) : ""}</strong>${b.os ? " on " + esc(b.os) : ""}`;
+}
+function renderRail(){
+  const bv = browserVerdict(), dv = deviceVerdict(), rv = rccVerdict();
+  const t = S ? S.tests : {};
+  const tick = (ok, label) => `<li class="${ok ? "ok" : ""}">${label}</li>`;
+  $("#rail").innerHTML = `
+    <div class="verdict"><div class="row"><span class="label">Browser allows WebHID</span>${pill(bv)}</div><p class="note">${esc(bv.note)}</p></div>
+    <div class="verdict"><div class="row"><span class="label">Headset works with WebHID</span>${pill(dv)}</div><p class="note">${esc(S ? S.name + ". " : "")}${esc(dv.note)}</p></div>
+    <div class="verdict"><div class="row"><span class="label">Remote call control</span>${pill(rv)}</div>${rv.note ? `<p class="note">${esc(rv.note)}</p>` : ""}
+      <ul class="ticks">${tick(t.answer, "Answer")}${tick(t.hangup, "Hang up")}${tick(t.mute, "Mute")}${tick(t.volUp && t.volDown, "Volume +/−")}</ul></div>`;
+}
+function checkRow(status, what, why){
+  const map = { yes:["yes","Yes"], no:["no","No"], blocked:["no","Blocked"], warn:["warn","Check"], idle:["","Not yet"], na:["","n/a"] };
+  const [cls, txt] = map[status] || map.idle;
+  return `<li><span class="what">${what}</span><span class="pill ${cls}">${txt}</span>${why ? `<span class="why">${why}</span>` : ""}</li>`;
+}
+function renderBrowser(){
+  const b = B.info || {}, rows = [];
+  const supportedName = /Chrome|Edge|Opera|Chromium|Brave|Vivaldi/.test(b.name || "");
+  rows.push(checkRow(B.hid ? "yes" : "no", "WebHID is built into this browser",
+    B.hid ? `<code>navigator.hid</code> is available in ${esc(b.name)} ${esc(b.version || "")}.` :
+    b.mobile ? "Phones and tablets don't have WebHID. Use a Windows, macOS, Linux or ChromeOS computer." :
+    `${esc(b.name || "This browser")} doesn't implement WebHID. Use Chrome or Edge 89 or later.`));
+  rows.push(checkRow(B.secure ? "yes" : "blocked", "Page is served securely", B.secure ? "" : "WebHID only works on HTTPS pages (or localhost)."));
+  rows.push(checkRow(B.policy === false ? "blocked" : B.policy === true ? "yes" : "idle", "Page is allowed to use HID devices",
+    B.policy === false ? (B.framed ? `This tool is running inside another page that doesn't grant the <code>hid</code> permission. <a href="${esc(location.href)}" target="_blank" rel="noopener">Open it in its own tab</a>.` : "The permissions policy for this page disallows <code>hid</code>.") :
+    B.policy === null ? "This browser doesn't report its permissions policy; it's checked when you choose a headset." : ""));
+  rows.push(checkRow(!B.hid || !B.secure || B.policy === false ? "na" : B.blocked ? "blocked" : B.chooser ? "yes" : "idle", "Browser settings and admin policy allow it",
+    B.blocked ? `The device chooser didn't open, which usually means HID access is blocked.${B.lastError ? ` <span class="mono">${esc(B.lastError)}</span>` : ""}` :
+    B.chooser ? "The device chooser opened normally." : "Checked when you click <b>Choose a headset</b>."));
+  $("#browserChecks").innerHTML = rows.join("");
+  let call = "";
+  if (B.blocked){
+    const edge = /Edge/.test(b.name || ""), p = edge ? "edge" : "chrome";
+    call = `<div class="callout no"><p>Where to look:</p><ul>
+      <li><span class="mono">${p}://settings/content/hidDevices</span>: “Sites can ask to connect to HID devices” must be on, and this site mustn't be in the blocked list.</li>
+      <li><span class="mono">${p}://policy</span>: look for <span class="mono">DefaultWebHidGuardSetting</span> (2 means blocked), <span class="mono">WebHidBlockedForUrls</span> and <span class="mono">WebHidAskForUrls</span>. Your IT admin sets these.</li></ul></div>`;
+  } else if (!B.hid && !b.mobile && !supportedName){
+    call = `<div class="callout no"><p>Open this page in Chrome or Edge on your computer to test a headset.</p></div>`;
+  }
+  $("#browserCallout").innerHTML = call;
+  $("#choose").disabled = !B.hid || !B.secure || B.policy === false;
+}
+function renderDevices(){
+  const ul = $("#devlist");
+  if (!B.hid){ ul.innerHTML = '<li><p class="empty">Not available in this browser.</p></li>'; return; }
+  if (!remembered.length){ ul.innerHTML = '<li><p class="empty">None yet. Click <b>Choose a headset</b> and pick yours from the browser\'s list.</p></li>'; return; }
+  ul.innerHTML = remembered.map(g => {
+    const cur = S && S.key === g.key;
+    const vendor = VENDORS[g.vendorId] || "Unknown vendor";
+    return `<li class="${cur ? "current" : ""}"><div><div class="name">${esc(g.name)}</div><div class="meta">${esc(vendor)}, VID ${hex(g.vendorId)}, PID ${hex(g.productId)}, ${g.devices.length} HID interface${g.devices.length > 1 ? "s" : ""}</div></div>
+      <div class="actions">${cur ? `<button class="btn secondary small" data-stop type="button">Stop testing</button>` : `<button class="btn small" data-test="${esc(g.key)}" type="button">Test this headset</button>`}
+      <button class="linkbtn" data-forget="${esc(g.key)}" type="button">Forget</button></div></li>`;
+  }).join("");
+}
+function renderDeviceCard(){
+  const box = $("#devcard");
+  if (!S){ box.innerHTML = ""; return; }
+  const c = S.caps, v = deviceVerdict();
+  const yn = x => x ? "yes" : "no";
+  const rows = [
+    checkRow(S.opened.length ? "yes" : "no", "Browser can open the headset", S.openErrors.length ? `<span class="mono">${esc(S.openErrors.join("; "))}</span> Close vendor apps that may hold the device (EPOS Connect, Jabra Direct, Poly Lens) and try again.` : ""),
+    checkRow(yn(c.telephony), "Telephony collection (usage page 0x0B)", c.telephony ? "" : "Generic WebHID softphones look for this collection."),
+    checkRow(yn(c.hook), "Call button reported (Hook Switch)", ""),
+    checkRow(yn(c.mute), "Mute button reported", c.phoneMute ? "Telephony Phone Mute." : c.consumerMute ? "Consumer Mute." : ""),
+    checkRow(c.vol ? "yes" : "warn", "Volume buttons reported", c.vol ? "" : "Many headsets change volume inside the headset or through the operating system, so softphones don't need this."),
+    checkRow(yn(c.ledOffHook), "Page can set the in-call state (Off-Hook LED)", ""),
+    checkRow(yn(c.ledRing), "Page can ring the headset (Ring LED or Ringer)", ""),
+    checkRow(yn(c.ledMute), "Page can light the mute indicator (Mute LED)", "")
+  ].join("");
+  const vendorName = VENDORS[S.vendorId] || "Unknown vendor";
+  let note = "";
+  if (S.L.ambiguous) note = `<div class="callout warn"><p>Some report IDs are split across several collections, so decoded names may be shifted. The raw bytes in the log are always exact.</p></div>`;
+  if (v.pill === "Vendor only") note += `<div class="callout warn"><p>Button presses will show in the log as vendor-defined codes. A softphone can only use them through the manufacturer's software or SDK, not generic WebHID.</p></div>`;
+  box.innerHTML = `<div class="devcard"><div class="devcard-head"><div><h3>${esc(S.name)}</h3><div class="meta">${esc(vendorName)}, VID ${hex(S.vendorId)}, PID ${hex(S.productId)}</div></div>${pill(v)}</div>
+    <ul class="checks">${rows}</ul>
+    <details class="desc"><summary>HID descriptor details (${S.L.tops.length} top-level collection${S.L.tops.length === 1 ? "" : "s"})</summary><div class="desc-body">${descTable()}</div></details></div>${note}`;
+}
+function descTable(){
+  const rows = [];
+  const walk = (col, di, path) => {
+    const reps = [];
+    for (const [type, key] of [["In","inputReports"],["Out","outputReports"],["Feature","featureReports"]]){
+      for (const r of col[key] || []){
+        const names = [];
+        for (const it of r.items || []){
+          if (it.isConstant){ names.push(`padding ${it.reportSize * it.reportCount}b`); continue; }
+          const us = (it.usages || []).map(u => usageName(ext(u, col.usagePage)));
+          if (us.length) names.push(...[...new Set(us)]);
+          else if (it.usageMinimum != null) names.push(`${usageName(ext(it.usageMinimum, col.usagePage))} … ${usageName(ext(it.usageMaximum, col.usagePage))}`);
+        }
+        reps.push(`<b>${type}</b> ID ${r.reportId}: ${esc(names.join(", ") || "(no usages)")}`);
+      }
+    }
+    rows.push(`<tr><td class="mono">${di + 1}</td><td class="mono">${path}</td><td>${esc(pageName(col.usagePage))}<br><span class="mono">${hex(col.usagePage)}:${hex(col.usage)}</span> ${esc(usageName(U(col.usagePage, col.usage)))}</td><td>${reps.join("<br>") || "<span class=\"empty\">No reports</span>"}</td></tr>`);
+    (col.children || []).forEach((ch, i) => walk(ch, di, path + "." + (i + 1)));
+  };
+  S.devs.forEach((d, di) => (d.collections || []).forEach((c, i) => walk(c, di, String(i + 1))));
+  return `<table><thead><tr><th>Interface</th><th>Collection</th><th>Usage</th><th>Reports</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
+function renderPlate(){
+  const plate = $("#plate"), active = !!(S && S.opened.length);
+  plate.classList.toggle("off", !active);
+  $("#plateCover").textContent = !B.hid ? "WebHID isn't available in this browser." : S && !S.opened.length ? "The headset couldn't be opened." : "Choose a headset in step 2 to start.";
+  for (const [id, on] of [["ring", host.ring], ["call", host.offHook], ["mute", host.mute], ["hold", host.hold]]) document.querySelector(`.led[data-led="${id}"]`).classList.toggle("on", active && on);
+  const c = S ? S.caps : {}, t = S ? S.tests : {};
+  $("#keys").innerHTML = KEYS.filter(k => !k.extra || (S && k.cap(c)) || (S && t[k.id])).map(k => {
+    const supported = S && k.cap(c), ok = S && t[k.id];
+    const cls = ok ? "ok" : (S && !supported) ? "na" : "";
+    const status = ok ? "Detected" : !S ? "" : supported ? "Waiting" : "Not in descriptor";
+    return `<div class="key ${cls}" data-key="${k.id}"><svg viewBox="0 0 24 24" aria-hidden="true">${k.icon}</svg><b>${k.label}</b><small>${status}</small></div>`;
+  }).join("");
+  // guide
+  let g = "";
+  if (active){
+    if (!c.hook && !c.mute && !c.vol) g = "This headset doesn't describe call buttons over WebHID. Press them anyway: anything it sends shows in the log.";
+    else if (host.ring) g = "The headset is ringing. Press its call button to answer.";
+    else if (!host.offHook && !t.answer) g = c.ledRing ? "Click Ring the headset, then press the call button on the headset to answer." : "Press the call button on the headset to answer.";
+    else if (host.offHook && c.mute && !t.mute) g = "You're in a test call. Press the mute button on the headset.";
+    else if (host.offHook && c.vol && !(t.volUp && t.volDown)) g = "Press volume up and volume down on the headset.";
+    else if (host.offHook && !t.hangup) g = "Press the call button again to hang up.";
+    else if (!t.answer || !t.hangup || (c.mute && !t.mute)) g = "Ring the headset again to finish the remaining checks.";
+    else g = "Done. Answer, hang up and mute all work from the headset.";
+  }
+  $("#guide").textContent = g;
+  // host buttons
+  const btn = n => document.querySelector(`[data-host="${n}"]`);
+  btn("ring").disabled = !active || host.offHook || host.ring;
+  btn("answer").disabled = !active || host.offHook;
+  btn("mute").disabled = !active || !host.offHook; btn("mute").textContent = host.mute ? "Unmute" : "Mute";
+  btn("hold").disabled = !active || !host.offHook; btn("hold").textContent = host.hold ? "Resume" : "Hold";
+  btn("end").disabled = !active || !(host.offHook || host.ring);
+  $("#hostHint").textContent = !active ? "" : !c.outputs
+    ? "This headset exposes no call-state outputs, so these buttons only change this page's own call state. Some DECT bases only send button presses while ringing or in a call."
+    : "Some DECT bases only send button presses while ringing or in a call, so start with Ring the headset if nothing appears.";
+}
+function render(){ renderEnv(); renderRail(); renderBrowser(); renderDevices(); renderDeviceCard(); renderPlate(); }
+
+/* ---------- Export ---------- */
+function snapshot(){
+  const b = B.info || {}, bv = browserVerdict(), dv = deviceVerdict(), rv = rccVerdict();
+  const c = S ? S.caps : null, t = S ? S.tests : null;
+  return { b, bv, dv, rv, c, t };
+}
+const YN = x => x == null ? "" : x ? "Yes" : "No";
+function summaryText(){
+  const { b, bv, dv, rv, c, t } = snapshot();
+  const lines = [
+    `Headset HID check, ${new Date().toLocaleString()}`,
+    `Browser: ${b.name} ${b.version || ""}${b.os ? " on " + b.os : ""}. WebHID: ${bv.pill}. ${bv.note}`
+  ];
+  if (S){
+    lines.push(`Headset: ${S.name} (${VENDORS[S.vendorId] || "unknown vendor"}, VID ${hex(S.vendorId)}, PID ${hex(S.productId)}). WebHID: ${dv.pill}. ${dv.note}`);
+    lines.push(`Reported by headset: call button ${YN(c.hook)}, mute ${YN(c.mute)}, volume ${YN(c.vol)}, in-call LED ${YN(c.ledOffHook)}, ring ${YN(c.ledRing)}, mute LED ${YN(c.ledMute)}`);
+    lines.push(`Tested: answer ${YN(t.answer)}, hang up ${YN(t.hangup)}, mute ${YN(t.mute)}, volume up ${YN(t.volUp)}, volume down ${YN(t.volDown)}`);
+    lines.push(`Remote call control: ${rv.pill}`);
+  } else lines.push("Headset: not tested");
+  return lines.join("\n");
+}
+const CSV_HEAD = ["Tested at","Browser","Browser version","OS","Browser allows WebHID","Headset","Vendor","VID","PID","Headset works with WebHID","Telephony collection","Call button reported","Mute reported","Volume reported","In-call LED output","Ring output","Mute LED output","Answer tested","Hang up tested","Mute tested","Volume up tested","Volume down tested","Remote call control"];
+function csvRow(){
+  const { b, bv, dv, rv, c, t } = snapshot();
+  const vals = [new Date().toISOString(), b.name, b.version, b.os, bv.pill,
+    S ? S.name : "", S ? (VENDORS[S.vendorId] || "") : "", S ? hex(S.vendorId) : "", S ? hex(S.productId) : "", S ? dv.pill : "Not tested",
+    c && YN(c.telephony), c && YN(c.hook), c && YN(c.mute), c && YN(c.vol), c && YN(c.ledOffHook), c && YN(c.ledRing), c && YN(c.ledMute),
+    t && YN(t.answer), t && YN(t.hangup), t && YN(t.mute), t && YN(t.volUp), t && YN(t.volDown), S ? rv.pill : "Not tested"];
+  const q = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  return CSV_HEAD.map(q).join(",") + "\r\n" + vals.map(q).join(",") + "\r\n";
+}
+function plainCollection(col){
+  const item = it => ({ usages:(it.usages || []).map(u => hex(ext(u, col.usagePage), 8)), usageMinimum: it.usageMinimum != null ? hex(ext(it.usageMinimum, col.usagePage), 8) : null, usageMaximum: it.usageMaximum != null ? hex(ext(it.usageMaximum, col.usagePage), 8) : null,
+    reportSize:it.reportSize, reportCount:it.reportCount, logicalMinimum:it.logicalMinimum, logicalMaximum:it.logicalMaximum, isConstant:it.isConstant, isArray:it.isArray, isAbsolute:it.isAbsolute, isRange:it.isRange });
+  const reps = list => (list || []).map(r => ({ reportId:r.reportId, items:(r.items || []).map(item) }));
+  return { usagePage:hex(col.usagePage), usage:hex(col.usage), name:usageName(U(col.usagePage, col.usage)), inputReports:reps(col.inputReports), outputReports:reps(col.outputReports), featureReports:reps(col.featureReports), children:(col.children || []).map(plainCollection) };
+}
+function fullReport(){
+  const { b, bv, dv, rv, c, t } = snapshot();
+  return { tool:"Headset HID check", testedAt:new Date().toISOString(), userAgent:navigator.userAgent,
+    browser:{ ...b, webhid:B.hid, secureContext:B.secure, inIframe:B.framed, permissionsPolicyAllowsHid:B.policy, chooserOpened:B.chooser, blocked:B.blocked, lastError:B.lastError, verdict:bv },
+    headset: S ? { name:S.name, vendor:VENDORS[S.vendorId] || null, vendorId:hex(S.vendorId), productId:hex(S.productId), verdict:dv, capabilities:c,
+      interfaces:S.devs.map(d => ({ opened:d.opened, collections:(d.collections || []).map(plainCollection) })) } : null,
+    callControl: S ? { verdict:rv, tests:t } : null,
+    log: logRows.slice(0, 200).map(r => ({ time:r.time, dir:r.dir, reportId:r.rid, bytes:r.bytes ? [...r.bytes].map(hb).join(" ") : null, meaning:r.meaning })) };
+}
+function download(name, text, type){
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+const fileBase = () => "headset-hid-" + (S ? S.name.replace(/[^\w-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") : "browser") + "-" + new Date().toISOString().slice(0, 10);
+async function copy(text){
+  try { await navigator.clipboard.writeText(text); toast("Summary copied."); }
+  catch { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast("Summary copied."); } catch { toast("Copy isn't allowed here."); } ta.remove(); }
+}
+function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), 2200); }
+
+/* ---------- Wiring ---------- */
+$("#choose").addEventListener("click", chooseHeadset);
+$("#devlist").addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.test){ const g = remembered.find(r => r.key === b.dataset.test); if (g) await startSession(g); }
+  else if (b.hasAttribute("data-stop")) await endSession();
+  else if (b.dataset.forget) await forget(b.dataset.forget);
+});
+$("#host").addEventListener("click", e => {
+  const b = e.target.closest("button[data-host]"); if (!b || !S) return;
+  const a = b.dataset.host;
+  if (a === "ring") applyHost({ ring:true, offHook:false }, "Ringing (incoming call)");
+  if (a === "answer") applyHost({ ring:false, offHook:true }, "Answered in page");
+  if (a === "mute") applyHost({ mute:!host.mute }, host.mute ? "Unmuted in page" : "Muted in page");
+  if (a === "hold") applyHost({ hold:!host.hold }, host.hold ? "Resumed in page" : "On hold in page");
+  if (a === "end") applyHost({ ring:false, offHook:false, mute:false, hold:false }, "Call ended in page");
+});
+$("#clearLog").addEventListener("click", () => { logRows.length = 0; renderLog(); });
+$("#resetTests").addEventListener("click", () => { if (!S) return; for (const k in S.tests) S.tests[k] = false; renderPlate(); renderRail(); toast("Call control results reset."); });
+$("#copySummary").addEventListener("click", () => copy(summaryText()));
+$("#downloadCsv").addEventListener("click", () => download(fileBase() + ".csv", csvRow(), "text/csv"));
+$("#downloadJson").addEventListener("click", () => download(fileBase() + ".json", JSON.stringify(fullReport(), null, 2), "application/json"));
+
+if (B.hid){
+  navigator.hid.addEventListener("connect", async () => {
+    await refreshRemembered();
+    if (!S && lastSessionKey){ const g = remembered.find(r => r.key === lastSessionKey); if (g){ await startSession(g); toast("Headset reconnected."); return; } }
+    render();
+  });
+  navigator.hid.addEventListener("disconnect", async e => {
+    if (S && S.devs.includes(e.device)){ addLog({ dir:"info", meaning:`${S.name} disconnected.` }); const k = S.key; await endSession(); lastSessionKey = k; }
+    await refreshRemembered(); render();
+  });
+}
+
+(async () => {
+  render();
+  await detectBrowser();
+  await refreshRemembered();
+  render();
+  if (remembered.length === 1 && B.policy !== false){ await startSession(remembered[0]); }
+})();
+})();
+</script>
+</body>
+</html>

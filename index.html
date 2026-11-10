@@ -164,12 +164,21 @@ td.mono{white-space:nowrap}
 .pr{grid-column:1/-1;border:1px solid var(--line-soft);border-radius:6px;padding:12px 14px 14px;margin:0;min-width:0}
 .pr legend{font-weight:600;font-size:.92rem;padding:0 4px}
 .pr p{margin:0 0 10px;font-size:.85rem;color:var(--muted)}
-.pr-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 16px}
+.pr-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px;align-items:end}
 .pr-grid label{font-weight:600}
 .pr-grid small{font-weight:400;font-size:.8rem;color:var(--muted)}
 .pr-grid small.ok{color:var(--pass);font-weight:600}
 .report-actions{margin-top:16px}
-@media (max-width:700px){.form{grid-template-columns:1fr}.pr-grid{grid-template-columns:1fr 1fr}}
+.confirm{margin-top:18px;border:1px solid var(--line-soft);border-radius:6px;padding:12px 14px 14px}
+.confirm h3{margin:0 0 2px;font-size:1rem}
+.confirm .hint{margin:0 0 10px}
+.confirm-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 16px;align-items:end}
+.confirm-grid label{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:.9rem;min-width:0}
+.confirm-grid small{font-weight:400;font-size:.8rem;color:var(--muted)}
+.confirm select{font:inherit;font-weight:400;font-size:.95rem;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:100%}
+.confirm select:disabled{opacity:.5}
+@media (max-width:700px){.form{grid-template-columns:1fr}.pr-grid{grid-template-columns:1fr 1fr}.confirm-grid{grid-template-columns:1fr}}
+@media (max-width:480px){.pr-grid{grid-template-columns:1fr;align-items:start}}
 footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 20px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .masthead .notice{margin-top:10px;font-size:.875rem;padding-left:10px;border-left:3px solid var(--line)}
@@ -248,6 +257,15 @@ footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wra
           <button class="btn secondary" data-host="end" type="button">End call</button>
         </div>
         <p class="hint" id="hostHint"></p>
+        <div class="confirm" id="confirmBox">
+          <h3>What did the headset do?</h3>
+          <p class="hint">This page sends ring and light signals but can't see the headset. After ringing, answering and muting above, record what you saw or heard.</p>
+          <div class="confirm-grid">
+            <label>Headset rang<select id="cf-ring"><option value="">Not checked</option><option value="yes">Yes</option><option value="no">No</option></select><small id="cfh-ring"></small></label>
+            <label>In-call light came on<select id="cf-light"><option value="">Not checked</option><option value="yes">Yes</option><option value="no">No</option></select><small id="cfh-light"></small></label>
+            <label>Mute light came on<select id="cf-muteLight"><option value="">Not checked</option><option value="yes">Yes</option><option value="no">No</option></select><small id="cfh-muteLight"></small></label>
+          </div>
+        </div>
         <div class="log-head"><h3>Report log</h3><button class="linkbtn" id="clearLog" type="button">Clear log</button></div>
         <div class="log-scroll">
           <table class="log">
@@ -277,13 +295,8 @@ footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wra
           <label id="rOtherWrap" hidden>Platform name<input id="rOther" type="text" placeholder="Name and version of the softphone"></label>
           <fieldset class="pr">
             <legend>What happened in that platform</legend>
-            <p>Make or take a test call in the platform with this headset, then record each button.</p>
-            <div class="pr-grid">
-              <label>Answer<select id="pr-answer"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-answer"></small></label>
-              <label>Hang up<select id="pr-hangup"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-hangup"></small></label>
-              <label>Mute<select id="pr-mute"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-mute"></small></label>
-              <label>Volume +/−<select id="pr-volume"><option value="">Not tried</option><option value="works">Works</option><option value="fails">Doesn't work</option></select><small id="here-volume"></small></label>
-            </div>
+            <p>In the platform's web app, check whether the headset is offered in its headset (HID) pairing list and pair it. Then make or take a test call and record each item.</p>
+            <div class="pr-grid" id="prGrid"></div>
           </fieldset>
           <label>Case or ticket number<input id="rTicket" type="text" autocomplete="off"></label>
           <label>Your name and company<input id="rTester" type="text" autocomplete="name"></label>
@@ -575,6 +588,7 @@ async function startSession(g){
   const s = { key:g.key, name:g.name, vendorId:g.vendorId, productId:g.productId, devs:devices, opened:[], openErrors:[],
               lastVal:new Map(), lastRaw:new Map(), arrPrev:new Map(), riseAt:new Map(), outBufs:new Map(), lastSendAt:-1e9,
               tests:{ answer:false, hangup:false, mute:false, volUp:false, volDown:false, flash:false, reject:false, redial:false, prog:false },
+              confirm:{ ring:"", light:"", muteLight:"" },
               handlers:[], connected:true, startedAt:new Date(), reportId:newId() };
   for (const d of devices){
     try { if (!d.opened) await d.open(); s.opened.push(d); }
@@ -868,6 +882,12 @@ function renderPlate(){
   btn("mute").disabled = !active || !host.offHook; btn("mute").textContent = host.mute ? "Unmute" : "Mute";
   btn("hold").disabled = !active || !host.offHook; btn("hold").textContent = host.hold ? "Resume" : "Hold";
   btn("end").disabled = !active || !(host.offHook || host.ring);
+  for (const [k, need, none] of [["ring", c.ledRing, "This headset has no ring output."], ["light", c.ledOffHook, "This headset has no in-call light output."], ["muteLight", c.ledMute, "This headset has no mute light output."]]){
+    const sel = $("#cf-" + k);
+    sel.disabled = !active || !need;
+    sel.value = active && need ? S.confirm[k] : "";
+    $("#cfh-" + k).textContent = active && !need ? none : "";
+  }
   $("#hostHint").textContent = !active ? "" : !c.outputs
     ? "This headset exposes no call-state outputs, so these buttons only change this page's own call state. Some DECT bases only send button presses while ringing or in a call."
     : "Some DECT bases only send button presses while ringing or in a call, so start with Ring the headset if nothing appears.";
@@ -895,15 +915,15 @@ function summaryText(){
   } else lines.push("Headset: not tested");
   return lines.join("\n");
 }
-const CSV_HEAD = ["Tested at","Browser","Browser version","OS","Browser allows WebHID","Headset","Vendor","VID","PID","Headset works with WebHID","Telephony collection","Call button reported","Mute reported","Volume reported","In-call LED output","Ring output","Mute LED output","Answer tested","Hang up tested","Mute tested","Volume up tested","Volume down tested","Remote call control","Platform","Platform answer","Platform hang up","Platform mute","Platform volume","Case or ticket","Diagnosis"];
+const CSV_HEAD = ["Tested at","Browser","Browser version","OS","Browser allows WebHID","Headset","Vendor","VID","PID","Headset works with WebHID","Telephony collection","Call button reported","Mute reported","Volume reported","In-call LED output","Ring output","Mute LED output","Answer tested","Hang up tested","Mute tested","Volume up tested","Volume down tested","Remote call control","Headset rang here","In-call light here","Mute light here","Platform","Platform HID pairing","Platform answer","Platform hang up","Platform mute","Platform volume","Platform rings","Platform lights in sync","Platform audio","Case or ticket","Diagnosis"];
 function csvRow(){
   const { b, bv, dv, rv, c, t } = snapshot();
   const vals = [new Date().toISOString(), b.name, b.version, b.os, bv.pill,
     S ? S.name : "", S ? (VENDORS[S.vendorId] || "") : "", S ? hex(S.vendorId) : "", S ? hex(S.productId) : "", S ? dv.pill : "Not tested",
     c && YN(c.telephony), c && YN(c.hook), c && YN(c.mute), c && YN(c.vol), c && YN(c.ledOffHook), c && YN(c.ledRing), c && YN(c.ledMute),
     t && YN(t.answer), t && YN(t.hangup), t && YN(t.mute), t && YN(t.volUp), t && YN(t.volDown), S ? rv.pill : "Not tested"];
-  const pc = platformCheck(), prTxt = v => ({ works:"Works", fails:"Doesn't work" })[v] || "Not tried";
-  vals.push(pc.platform, prTxt(pc.results.answer), prTxt(pc.results.hangup), prTxt(pc.results.mute), prTxt(pc.results.volume), pc.ticket, pc.diagnosis.title);
+  const pc = platformCheck(), cfTxt = v => ({ yes:"Yes", no:"No" })[v] || (S ? "Not checked" : "");
+  vals.push(cfTxt(S && S.confirm.ring), cfTxt(S && S.confirm.light), cfTxt(S && S.confirm.muteLight), pc.platform, ...CHECKS.map(ch => optText(ch.k, pc.results[ch.k])), pc.ticket, pc.diagnosis.title);
   const q = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   return CSV_HEAD.map(q).join(",") + "\r\n" + vals.map(q).join(",") + "\r\n";
 }
@@ -919,7 +939,7 @@ function fullReport(){
     browser:{ ...b, webhid:B.hid, secureContext:B.secure, inIframe:B.framed, permissionsPolicyAllowsHid:B.policy, chooserOpened:B.chooser, blocked:B.blocked, lastError:B.lastError, verdict:bv },
     headset: S ? { name:S.name, vendor:VENDORS[S.vendorId] || null, vendorId:hex(S.vendorId), productId:hex(S.productId), verdict:dv, capabilities:c,
       interfaces:S.devs.map(d => ({ opened:d.opened, collections:(d.collections || []).map(plainCollection) })) } : null,
-    callControl: S ? { verdict:rv, tests:t } : null,
+    callControl: S ? { verdict:rv, tests:t, confirmed:{ ...S.confirm } } : null,
     platformCheck: platformCheck(),
     log: logRows.slice(0, 200).map(r => ({ time:r.time, dir:r.dir, reportId:r.rid, bytes:r.bytes ? [...r.bytes].map(hb).join(" ") : null, meaning:r.meaning })) };
 }
@@ -935,7 +955,21 @@ async function copy(text){
 function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), 2200); }
 
 /* ---------- Report for platform developers ---------- */
-const PR_KEYS = [["answer","Answer"],["hangup","Hang up"],["mute","Mute"],["volume","Volume +/−"]];
+const WORKS_OPTS = [["","Not tried"],["works","Works"],["fails","Doesn't work"]];
+const CHECKS = [
+  { k:"pairing", label:"Listed for HID pairing", short:"HID pairing", opts:[["","Not checked"],["paired","Listed and paired"],["pair-failed","Listed, pairing failed"],["not-listed","Not listed"]] },
+  { k:"answer", label:"Answer", short:"answer" },
+  { k:"hangup", label:"Hang up", short:"hang up" },
+  { k:"mute", label:"Mute", short:"mute" },
+  { k:"volume", label:"Volume +/−", short:"volume +/−" },
+  { k:"ring", label:"Rings on incoming call", short:"ringing" },
+  { k:"lights", label:"Lights in sync", long:"Call and mute lights in sync", short:"call and mute lights" },
+  { k:"audio", label:"Audio", long:"Audio (microphone and speaker)", short:"audio" }
+];
+const optsFor = ch => ch.opts || WORKS_OPTS;
+const PLATFORM_OK = new Set(["works","paired"]), PLATFORM_FAIL = new Set(["fails","pair-failed","not-listed"]);
+const optText = (k, v) => { const o = optsFor(CHECKS.find(c => c.k === k)).find(x => x[0] === v); return o ? o[1] : "Not tried"; };
+$("#prGrid").innerHTML = CHECKS.map(ch => `<label>${esc(ch.label)}<select id="pr-${ch.k}">${optsFor(ch).map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select><small id="here-${ch.k}"></small></label>`).join("");
 const store = {
   get(k){ try { return localStorage.getItem("hhc." + k) || ""; } catch { return ""; } },
   set(k, v){ try { localStorage.setItem("hhc." + k, v); } catch {} }
@@ -947,32 +981,56 @@ function platformName(){
   if (sel.value === "other") return $("#rOther").value.trim() || "the platform";
   return sel.options[sel.selectedIndex].text;
 }
-function platformResults(){ const o = {}; for (const [k] of PR_KEYS) o[k] = $("#pr-" + k).value; return o; }
-function hereResults(){ const t = S ? S.tests : {}; return { answer:!!t.answer, hangup:!!t.hangup, mute:!!t.mute, volume:!!(t.volUp && t.volDown) }; }
-const PR_LABEL = k => PR_KEYS.find(x => x[0] === k)[1].toLowerCase();
+function platformResults(){ const o = {}; for (const ch of CHECKS) o[ch.k] = $("#pr-" + ch.k).value; return o; }
+// What this page found for each check: "yes", "no", "unknown" (not checked yet) or "na" (can't be tested here).
+function hereResults(){
+  const o = {};
+  if (!S){ for (const ch of CHECKS) o[ch.k] = ch.k === "audio" ? "na" : "unknown"; return o; }
+  const t = S.tests, c = S.caps || {}, cf = S.confirm;
+  const det = (ok, supported) => ok ? "yes" : supported ? "unknown" : "no";
+  o.pairing = S.opened.length ? "yes" : "no";
+  o.answer = det(t.answer, c.hook); o.hangup = det(t.hangup, c.hook); o.mute = det(t.mute, c.mute);
+  o.volume = det(t.volUp && t.volDown, c.vol);
+  o.ring = !c.ledRing ? "no" : cf.ring || "unknown";
+  o.lights = !c.ledOffHook ? "no" : (cf.light === "no" || cf.muteLight === "no") ? "no" : cf.light === "yes" ? "yes" : "unknown";
+  o.audio = "na";
+  return o;
+}
+const SHORT = k => CHECKS.find(c => c.k === k).short;
 function diagnosis(){
   const name = platformName(), bv = browserVerdict(), dv = deviceVerdict(), here = hereResults(), pr = platformResults();
   if (bv.cls === "no") return { cls:"no", title:"WebHID is blocked or unavailable in this browser", text:`${bv.note} No web softphone, including ${name}, can use the headset's buttons in this browser until that's fixed.` };
   if (!S || !S.opened.length) return { cls:"", title:"Test a headset first", text:"Choose a headset in step 2 and run the call control test in step 3. The report is most useful once both are done." };
-  if (dv.pill === "Vendor only") return { cls:"warn", title:"Headset isn't supported by standard WebHID", text:`${S.name} only sends vendor-defined reports. A web softphone can't use its buttons through standard WebHID, so ${name} would need the manufacturer's software or SDK, or a headset with standard telephony controls.` };
-  if (dv.cls === "no") return { cls:"no", title:"Headset exposes no call controls over WebHID", text:`${dv.note} This is a limitation of the headset, not of ${name}.` };
-  const failing = PR_KEYS.map(x => x[0]).filter(k => pr[k] === "fails");
-  const platformSide = failing.filter(k => here[k]);
-  const headsetSide = failing.filter(k => !here[k]);
+  const audioNote = pr.audio === "fails" ? ` Audio failing in ${name} isn't a WebHID issue: check the microphone and speaker selected in ${name} and in the operating system.` : "";
+  if (dv.pill === "Vendor only") return { cls:"warn", title:"Headset isn't supported by standard WebHID", text:`${S.name} only sends vendor-defined reports. A web softphone can't use its buttons through standard WebHID, so ${name} would need the manufacturer's software or SDK, or a headset with standard telephony controls.${pr.pairing === "not-listed" ? ` That also explains why ${name} doesn't list it for HID pairing.` : ""}${audioNote}` };
+  if (dv.cls === "no") return { cls:"no", title:"Headset exposes no call controls over WebHID", text:`${dv.note} This is a limitation of the headset, not of ${name}.${audioNote}` };
+  const failing = CHECKS.map(c => c.k).filter(k => k !== "audio" && PLATFORM_FAIL.has(pr[k]));
+  const platformSide = failing.filter(k => here[k] === "yes");
+  const headsetSide = failing.filter(k => here[k] === "no");
+  const unconfirmed = failing.filter(k => here[k] === "unknown");
+  const many = a => a.length > 1;
   const partNote = dv.pill === "Partly" ? " The headset can't receive call state over WebHID, so no web softphone can ring it or keep its call light in sync." : "";
-  const alsoHeadset = headsetSide.length ? ` ${cap(listText(headsetSide.map(PR_LABEL)))} ${headsetSide.length > 1 ? "weren't" : "wasn't"} detected here either, so ${headsetSide.length > 1 ? "those point" : "that points"} to the headset.` : "";
+  const headsetNote = headsetSide.length ? ` ${cap(listText(headsetSide.map(SHORT)))} didn't work here either, so ${many(headsetSide) ? "those point" : "that points"} to the headset.` : "";
+  const unconfNote = unconfirmed.length ? ` ${cap(listText(unconfirmed.map(SHORT)))} failed in ${name} but ${many(unconfirmed) ? "haven't" : "hasn't"} been confirmed here yet; finish step 3 to tell which side is at fault.` : "";
+  const extra = headsetNote + unconfNote + partNote + audioNote;
   if (platformSide.length){
-    const many = platformSide.length > 1;
-    return { cls:"warn", title:`Likely an issue in ${name}`, text:`${cap(listText(platformSide.map(PR_LABEL)))} ${many ? "work" : "works"} over standard WebHID in this browser on this computer but ${many ? "don't" : "doesn't"} work in ${name}. The headset sends standard telephony reports, so the platform's headset integration should be checked: whether it uses WebHID for this vendor, and which report IDs and usages it listens for.${alsoHeadset}${partNote}` };
+    let why = "";
+    if (platformSide.includes("pairing")){
+      why += pr.pairing === "not-listed"
+        ? ` It doesn't offer the headset for HID pairing even though this browser can open it, so the platform may only list certain vendors or models (this one is VID ${hex(S.vendorId)}, PID ${hex(S.productId)}).`
+        : ` Pairing failed there. Browser permission for HID devices is granted per website, so allowing the headset on this page doesn't allow it on the platform's site: check that the platform's site is allowed in the browser's HID device settings and that no admin policy blocks it.`;
+    }
+    if (platformSide.some(k => k !== "pairing")) why += ` For the call controls, check whether the platform uses WebHID for this vendor and which report IDs and usages it listens for and sends.`;
+    return { cls:"warn", title:`Likely an issue in ${name}`, text:`${cap(listText(platformSide.map(SHORT)))} ${many(platformSide) ? "work" : "works"} with this headset over standard WebHID here but ${many(platformSide) ? "don't" : "doesn't"} work in ${name}.${why}${extra}` };
   }
-  const done = here.answer && here.hangup && here.mute;
+  const done = here.answer === "yes" && here.hangup === "yes" && here.mute === "yes";
   if (!done){
-    const n = [here.answer, here.hangup, here.mute].filter(Boolean).length;
-    return { cls:"warn", title:"Live test not finished", text:`${n} of 3 required controls (answer, hang up, mute) were detected here. Finish step 3 so the report shows whether the headset itself works.${alsoHeadset}${partNote}` };
+    const n = ["answer","hangup","mute"].filter(k => here[k] === "yes").length;
+    return { cls:"warn", title:"Live test not finished", text:`${n} of 3 required controls (answer, hang up, mute) were detected here. Finish step 3 so the report shows whether the headset itself works.${extra}` };
   }
-  const tried = PR_KEYS.map(x => x[0]).filter(k => pr[k]);
-  if (tried.length && tried.every(k => pr[k] === "works")) return { cls:"yes", title:`Works here and in ${name}`, text:`Answer, hang up and mute work over WebHID in this browser, and every control you tried also works in ${name}.${partNote}` };
-  return { cls:"yes", title:"Headset supports standard WebHID call control", text:`Answer, hang up and mute all work over WebHID in this browser on this computer.${alsoHeadset || ` Record how the headset behaves in ${name} above to complete the report.`}${partNote}` };
+  const tried = CHECKS.map(c => c.k).filter(k => pr[k]);
+  if (tried.length && tried.every(k => PLATFORM_OK.has(pr[k]))) return { cls:"yes", title:`Works here and in ${name}`, text:`Answer, hang up and mute work over WebHID in this browser, and everything you checked in ${name} also works.${partNote}` };
+  return { cls:"yes", title:"Headset supports standard WebHID call control", text:`Answer, hang up and mute all work over WebHID in this browser on this computer.${extra || ` Record how the headset behaves in ${name} above to complete the report.`}` };
 }
 function platformCheck(){
   return { platform: platformName(), platformId: $("#rPlatform").value, results: platformResults(), detectedHere: hereResults(),
@@ -980,11 +1038,17 @@ function platformCheck(){
 }
 function renderReport(){
   $("#rOtherWrap").hidden = $("#rPlatform").value !== "other";
-  const here = hereResults();
-  for (const [k] of PR_KEYS){
-    const el = $("#here-" + k);
-    el.textContent = !S ? "" : here[k] ? "Here: detected" : "Here: not detected yet";
-    el.className = here[k] ? "ok" : "";
+  const here = hereResults(), c = S ? S.caps || {} : {};
+  const HINT = {
+    pairing: { yes:"Here: opened over WebHID", no:"Here: couldn't open" },
+    ring: { yes:"Here: rang", no: c.ledRing ? "Here: didn't ring" : "Here: no ring output", unknown:"Here: not checked in step 3" },
+    lights: { yes:"Here: lights came on", no: c.ledOffHook ? "Here: lights didn't come on" : "Here: no call-light output", unknown:"Here: not checked in step 3" },
+    audio: { na:"Not tested here" }
+  };
+  for (const ch of CHECKS){
+    const el = $("#here-" + ch.k), v = here[ch.k];
+    el.textContent = !S ? (ch.k === "audio" ? "Not tested here" : "") : (HINT[ch.k] && HINT[ch.k][v]) || (v === "yes" ? "Here: detected" : v === "no" ? "Here: not reported" : "Here: not detected yet");
+    el.className = v === "yes" ? "ok" : "";
   }
   const d = diagnosis();
   $("#diagnosis").innerHTML = `<div class="callout ${d.cls}"><p><b>${esc(d.title)}</b></p><p>${esc(d.text)}</p></div>`;
@@ -995,12 +1059,13 @@ function reportHtml(){
   const prTxt = v => ({ works:"Works", fails:"Doesn't work" })[v] || "Not tried";
   const kv = pairs => `<table class="kv">${pairs.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>`;
   const toolUrl = location.origin + location.pathname;
-  const ctl = [
-    ["Answer", c && c.hook, pc.detectedHere.answer, pc.results.answer],
-    ["Hang up", c && c.hook, pc.detectedHere.hangup, pc.results.hangup],
-    ["Mute", c && c.mute, pc.detectedHere.mute, pc.results.mute],
-    ["Volume +/−", c && c.vol, pc.detectedHere.volume, pc.results.volume]
-  ].map(([n, rep, here, plat]) => `<tr><th>${n}</th><td>${h ? yn(rep) : "–"}</td><td>${h ? yn(here) : "–"}</td><td class="${plat === "fails" ? "bad" : plat === "works" ? "good" : ""}">${prTxt(plat)}</td></tr>`).join("");
+  const hereTxt = v => ({ yes:"Yes", no:"No", unknown:"Not confirmed", na:"Not tested here" })[v] || "–";
+  const supported = { pairing: h ? h.interfaces.some(i => i.opened) : null, answer: c && c.hook, hangup: c && c.hook, mute: c && c.mute, volume: c && c.vol, ring: c && c.ledRing, lights: c && c.ledOffHook, audio: undefined };
+  const ctl = CHECKS.map(ch => {
+    const plat = pc.results[ch.k];
+    const sup = ch.k === "audio" ? "n/a" : h ? yn(supported[ch.k]) : "–";
+    return `<tr><th>${esc(ch.long || ch.label)}</th><td>${sup}</td><td>${h ? hereTxt(pc.detectedHere[ch.k]) : "–"}</td><td class="${PLATFORM_FAIL.has(plat) ? "bad" : PLATFORM_OK.has(plat) ? "good" : ""}">${esc(optText(ch.k, plat))}</td></tr>`;
+  }).join("");
   let desc = "";
   if (h){
     const rows = [];
@@ -1047,8 +1112,8 @@ pre{white-space:pre-wrap;word-break:break-all;background:#F3F5F8;padding:12px;bo
 <p class="meta">${esc(h ? h.name : "No headset tested")}, tested ${esc(new Date(r.testedAt).toLocaleString())} with ${esc(pc.platform)}${pc.ticket ? ", case " + esc(pc.ticket) : ""}</p>
 <div class="callout ${d.cls}"><p><b>${esc(d.title)}</b></p><p>${esc(d.text)}</p></div>
 
-<h2>Call controls: this test compared with ${esc(pc.platform)}</h2>
-<div class="wrap-x"><table><thead><tr><th>Control</th><th>Headset reports it over WebHID</th><th>Worked over WebHID in this test</th><th>In ${esc(pc.platform)}</th></tr></thead><tbody>${ctl}</tbody></table></div>
+<h2>This test compared with ${esc(pc.platform)}</h2>
+<div class="wrap-x"><table><thead><tr><th>Check</th><th>Supported over WebHID</th><th>Worked in this test</th><th>In ${esc(pc.platform)}</th></tr></thead><tbody>${ctl}</tbody></table></div>
 ${c ? `<h2>Call state a web softphone can send to the headset</h2>${kv([["Ring (Ring LED or Ringer)", yn(c.ledRing)], ["In call (Off-Hook LED)", yn(c.ledOffHook)], ["Mute indicator (Mute LED)", yn(c.ledMute)], ["Hold indicator (Hold LED)", yn(c.ledHold)]])}` : ""}
 
 <h2>Tester</h2>
@@ -1087,8 +1152,9 @@ function emailParts(){
   if (S){
     lines.push(`Headset: ${S.name} (${VENDORS[S.vendorId] || "unknown vendor"}, VID ${hex(S.vendorId)}, PID ${hex(S.productId)})`);
     lines.push(`Headset over WebHID: ${deviceVerdict().pill}`);
-    lines.push(`Detected over WebHID in this test: answer ${YN(here.answer)}, hang up ${YN(here.hangup)}, mute ${YN(here.mute)}, volume ${YN(here.volume)}`);
-    lines.push(`In ${pc.platform}: answer ${prTxt(pc.results.answer)}, hang up ${prTxt(pc.results.hangup)}, mute ${prTxt(pc.results.mute)}, volume ${prTxt(pc.results.volume)}`);
+    const ht = v => ({ yes:"yes", no:"no", unknown:"not confirmed" })[v];
+    lines.push(`In this test: ${CHECKS.filter(ch => here[ch.k] !== "na").map(ch => `${ch.short} ${ht(here[ch.k])}`).join(", ")}`);
+    lines.push(`In ${pc.platform}: ${CHECKS.map(ch => `${ch.short} ${optText(ch.k, pc.results[ch.k]).toLowerCase()}`).join(", ")}`);
   }
   lines.push(`Browser: ${b.name} ${b.version || ""}${b.os ? " on " + b.os : ""}`);
   if (pc.notes) lines.push("", "Notes:", pc.notes);
@@ -1180,7 +1246,12 @@ $("#host").addEventListener("click", e => {
   if (a === "end") applyHost({ ring:false, offHook:false, mute:false, hold:false }, "Call ended in page");
 });
 $("#clearLog").addEventListener("click", () => { logRows.length = 0; renderLog(); });
-$("#resetTests").addEventListener("click", () => { if (!S) return; for (const k in S.tests) S.tests[k] = false; renderPlate(); renderRail(); renderReport(); scheduleSave(); toast("Call control results reset."); });
+$("#confirmBox").addEventListener("change", e => {
+  const sel = e.target.closest("select"); if (!sel || !S) return;
+  S.confirm[sel.id.slice(3)] = sel.value;
+  renderReport(); scheduleSave();
+});
+$("#resetTests").addEventListener("click", () => { if (!S) return; for (const k in S.tests) S.tests[k] = false; for (const k in S.confirm) S.confirm[k] = ""; renderPlate(); renderRail(); renderReport(); scheduleSave(); toast("Call control results reset."); });
 $("#copySummary").addEventListener("click", () => { copy(summaryText()); saveReport("copy-summary"); });
 $("#downloadCsv").addEventListener("click", () => { download(fileBase() + ".csv", csvRow(), "text/csv"); saveReport("download-csv"); });
 $("#downloadJson").addEventListener("click", () => { download(fileBase() + ".json", JSON.stringify(fullReport(), null, 2), "application/json"); saveReport("download-json"); });

@@ -25,7 +25,10 @@ const HEADERS = [
   'In-call LED output', 'Ring output', 'Mute LED output',
   'Answer here', 'Hang up here', 'Mute here', 'Volume up here', 'Volume down here', 'Remote call control',
   'Platform answer', 'Platform hang up', 'Platform mute', 'Platform volume',
-  'Diagnosis', 'Diagnosis detail', 'Notes', 'Report file', 'Report file ID', 'User agent', 'Tool URL'
+  'Diagnosis', 'Diagnosis detail', 'Notes', 'Report file', 'Report file ID', 'User agent', 'Tool URL',
+  // Added later; kept at the end so existing sheets stay aligned.
+  'Platform HID pairing', 'Platform rings', 'Platform lights in sync', 'Platform audio',
+  'Headset rang here', 'In-call light here', 'Mute light here'
 ];
 const COL_ID = HEADERS.indexOf('Report ID') + 1;
 const COL_FILE = HEADERS.indexOf('Report file') + 1;
@@ -93,6 +96,9 @@ function buildRow_(r, id, trigger, fileUrl, fileId) {
   const yn = v => (v === true ? 'Yes' : v === false ? 'No' : '');
   const ynh = v => (h ? yn(!!v) : '');
   const pt = v => (v === 'works' ? 'Works' : v === 'fails' ? "Doesn't work" : 'Not tried');
+  const pairing = v => ({ paired: 'Listed and paired', 'pair-failed': 'Listed, pairing failed', 'not-listed': 'Not listed' })[v] || 'Not checked';
+  const cf = (cc && cc.confirmed) || {};
+  const seen = v => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : (h ? 'Not checked' : ''));
   const verdict = v => (v && v.pill) || '';
   const values = [
     new Date(), id, trigger, r.testedAt ? new Date(r.testedAt) : '',
@@ -103,7 +109,9 @@ function buildRow_(r, id, trigger, fileUrl, fileId) {
     ynh(c.ledOffHook), ynh(c.ledRing), ynh(c.ledMute),
     ynh(t.answer), ynh(t.hangup), ynh(t.mute), ynh(t.volUp), ynh(t.volDown), cc ? verdict(cc.verdict) : 'Not tested',
     pt(pr.answer), pt(pr.hangup), pt(pr.mute), pt(pr.volume),
-    d.title, d.text, pc.notes, fileUrl, fileId, r.userAgent, r.toolUrl
+    d.title, d.text, pc.notes, fileUrl, fileId, r.userAgent, r.toolUrl,
+    pairing(pr.pairing), pt(pr.ring), pt(pr.lights), pt(pr.audio),
+    seen(cf.ring), seen(cf.light), seen(cf.muteLight)
   ];
   return values.map(clean_);
 }
@@ -125,8 +133,10 @@ function sheet_() {
   if (sh.getLastRow() === 0) {
     sh.appendRow(HEADERS);
     sh.setFrozenRows(1);
-    sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
+  } else {
+    sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);   // picks up columns added in later versions
   }
+  sh.getRange(1, 1, 1, HEADERS.length).setFontWeight('bold');
   return sh;
 }
 

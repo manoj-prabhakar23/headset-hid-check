@@ -28,6 +28,26 @@ Everything runs in the browser. Nothing about the headset is uploaded.
 
 Results can also be copied as a text summary, downloaded as a CSV row (for an inventory spreadsheet, now including the platform results and diagnosis) or downloaded as a full JSON report.
 
+## Results log (saving every user's report)
+
+When `SAVE_URL` at the top of the script in `index.html` is set, the page saves each user's report to the owner's Google account:
+
+- **Google Sheet**: one row per report (browser, headset, IDs, capabilities, live results, platform results, diagnosis, tester, case, notes, link to the full report). Later saves of the same test update that row instead of adding new ones.
+- **Google Drive**: the full HTML report in a private `Headset HID reports` folder.
+
+Saving happens automatically a few seconds after results change, immediately when a user downloads, emails or copies a report, and (without the HTML file) when the page is closed with unsaved changes. Nothing is saved for visitors who never test a headset or hit a block. When saving is on, the page tells every user, at the top and in the footer, that their results, including any name, email and notes they enter, are saved to a private results log.
+
+### Set it up
+
+1. Create a Google Sheet (for example, *Headset HID check results*).
+2. In the Sheet, open **Extensions → Apps Script**, replace the sample code with [`apps-script/Code.gs`](apps-script/Code.gs) and click **Save**.
+3. Click **Deploy → New deployment**, choose type **Web app**, set **Execute as: Me** and **Who has access: Anyone**, then **Deploy** and authorize the requested Sheets and Drive access.
+4. Copy the **Web app URL** (it ends in `/exec`) into `const SAVE_URL = "";` in `index.html` and push.
+
+After changing `Code.gs`, use **Deploy → Manage deployments → Edit → New version** so the same URL keeps working.
+
+The endpoint accepts only well-formed Headset HID check reports up to 4 MB, never returns stored data, and stores user text as plain values (no spreadsheet formulas). Anyone who knows the URL can still post a fake report, so treat rows as tester-supplied.
+
 ## Notes
 
 - WebHID is only in Chromium browsers (Chrome, Edge, Opera) on desktop. Firefox, Safari and mobile browsers don't have it.

@@ -172,6 +172,10 @@ td.mono{white-space:nowrap}
 @media (max-width:700px){.form{grid-template-columns:1fr}.pr-grid{grid-template-columns:1fr 1fr}}
 footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 20px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.masthead .notice{margin-top:10px;font-size:.875rem;padding-left:10px;border-left:3px solid var(--line)}
+.save-status{margin:0;font-size:.85rem;color:var(--muted)}
+.save-status.ok{color:var(--pass)}
+.save-status.err{color:var(--fail)}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:6px;font-weight:600;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
 @media (max-width:900px){.grid{grid-template-columns:1fr}.rail{position:static}.env{text-align:left}}
@@ -185,6 +189,7 @@ footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wra
     <div>
       <h1>Headset HID check</h1>
       <p>Tests whether this browser and a USB or DECT headset support WebHID call control: answering, hanging up, muting and changing volume from the headset's own buttons.</p>
+      <p class="notice" id="saveNotice" hidden>Test results are saved, including any name, email and notes you enter in step 4, to a private results log kept by this tool's owner so headset support can be reviewed.</p>
     </div>
     <div class="env" id="env">Detecting browser…</div>
   </header>
@@ -194,6 +199,7 @@ footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wra
       <h2 id="results-title">Results</h2>
       <div id="rail"></div>
       <div class="export">
+        <p class="save-status" id="saveStatus" role="status" hidden></p>
         <button class="btn secondary small" id="copySummary" type="button">Copy summary</button>
         <button class="btn secondary small" id="downloadCsv" type="button">Download CSV row</button>
         <button class="linkbtn" id="downloadJson" type="button">Download full report (JSON)</button>
@@ -290,13 +296,13 @@ footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wra
           <button class="btn secondary" id="emailReport" type="button">Email the report</button>
           <button class="btn secondary" id="copyEmail" type="button">Copy email text</button>
         </div>
-        <p class="hint">The report is a single HTML file that opens in any browser and includes the full technical data: HID descriptor, report log and raw JSON. <b>Email the report</b> downloads it and opens a draft in your email app; attach the downloaded file before sending.</p>
+        <p class="hint">The report is a single HTML file that opens in any browser and includes the full technical data: HID descriptor, report log and raw JSON. <b>Email the report</b> downloads it and opens a draft in your email app; attach the downloaded file before sending.<span id="saveHint"></span></p>
       </section>
     </main>
   </div>
 
   <footer>
-    <span>Runs entirely in your browser. Nothing about your headset is uploaded.</span>
+    <span id="privacyNote">Runs entirely in your browser. Nothing about your headset is uploaded.</span>
     <a href="https://wicg.github.io/webhid/" target="_blank" rel="noopener">WebHID specification</a>
     <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API" target="_blank" rel="noopener">WebHID on MDN</a>
     <a href="https://usb.org/document-library/hid-usage-tables-15" target="_blank" rel="noopener">HID usage tables</a>
@@ -307,6 +313,8 @@ footer{margin-top:28px;font-size:.85rem;color:var(--muted);display:flex;flex-wra
 <script>
 "use strict";
 (() => {
+// Results log: Google Apps Script web app URL (ends in /exec). Leave empty to turn saving off.
+const SAVE_URL = "";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const hex = (n, w = 4) => "0x" + (Number(n) >>> 0).toString(16).toUpperCase().padStart(w, "0");
@@ -567,7 +575,7 @@ async function startSession(g){
   const s = { key:g.key, name:g.name, vendorId:g.vendorId, productId:g.productId, devs:devices, opened:[], openErrors:[],
               lastVal:new Map(), lastRaw:new Map(), arrPrev:new Map(), riseAt:new Map(), outBufs:new Map(), lastSendAt:-1e9,
               tests:{ answer:false, hangup:false, mute:false, volUp:false, volDown:false, flash:false, reject:false, redial:false, prog:false },
-              handlers:[], connected:true, startedAt:new Date() };
+              handlers:[], connected:true, startedAt:new Date(), reportId:newId() };
   for (const d of devices){
     try { if (!d.opened) await d.open(); s.opened.push(d); }
     catch (e){ s.openErrors.push(`${e.name}: ${e.message}`); }
@@ -702,7 +710,7 @@ function onInput(e, di){
     }
   }
   addLog({ dir:"in", rid:e.reportId, bytes, prev, meaning: out.join("; ") || (rep ? "No change in known controls" : "") });
-  renderPlate(); renderRail(); renderReport();
+  renderPlate(); renderRail(); renderReport(); scheduleSave();
 }
 
 /* ---------- Log ---------- */
@@ -864,7 +872,7 @@ function renderPlate(){
     ? "This headset exposes no call-state outputs, so these buttons only change this page's own call state. Some DECT bases only send button presses while ringing or in a call."
     : "Some DECT bases only send button presses while ringing or in a call, so start with Ring the headset if nothing appears.";
 }
-function render(){ renderEnv(); renderRail(); renderBrowser(); renderDevices(); renderDeviceCard(); renderPlate(); renderReport(); }
+function render(){ renderEnv(); renderRail(); renderBrowser(); renderDevices(); renderDeviceCard(); renderPlate(); renderReport(); renderSave(); scheduleSave(); }
 
 /* ---------- Export ---------- */
 function snapshot(){
@@ -907,7 +915,7 @@ function plainCollection(col){
 }
 function fullReport(){
   const { b, bv, dv, rv, c, t } = snapshot();
-  return { tool:"Headset HID check", testedAt:new Date().toISOString(), userAgent:navigator.userAgent,
+  return { tool:"Headset HID check", reportId:currentId(), toolUrl:location.origin + location.pathname, testedAt:new Date().toISOString(), userAgent:navigator.userAgent,
     browser:{ ...b, webhid:B.hid, secureContext:B.secure, inIframe:B.framed, permissionsPolicyAllowsHid:B.policy, chooserOpened:B.chooser, blocked:B.blocked, lastError:B.lastError, verdict:bv },
     headset: S ? { name:S.name, vendor:VENDORS[S.vendorId] || null, vendorId:hex(S.vendorId), productId:hex(S.productId), verdict:dv, capabilities:c,
       interfaces:S.devs.map(d => ({ opened:d.opened, collections:(d.collections || []).map(plainCollection) })) } : null,
@@ -1097,6 +1105,63 @@ function emailReport(){
   toast("Report downloaded. Attach it to the email draft.");
 }
 
+/* ---------- Results log (saves every report to the owner's backend) ---------- */
+const newId = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : "r" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12));
+const PAGE_ID = newId();
+const currentId = () => (S && S.reportId) || PAGE_ID;
+const saveState = { at:null, busy:false, error:"", sig:"", dirty:false, timer:null };
+const worthSaving = () => !!S || B.blocked;
+function saveSig(){
+  const r = fullReport();
+  return JSON.stringify([r.reportId, r.browser.verdict, r.headset && r.headset.verdict, r.headset && r.headset.capabilities, r.callControl, r.platformCheck]);
+}
+function scheduleSave(){
+  if (!SAVE_URL || !worthSaving()) return;
+  if (saveSig() === saveState.sig) return;
+  saveState.dirty = true;
+  clearTimeout(saveState.timer);
+  saveState.timer = setTimeout(() => saveReport("auto"), 4000);
+  renderSave();
+}
+async function saveReport(trigger){
+  if (!SAVE_URL || !worthSaving()) return false;
+  const sig = saveSig();
+  if (trigger === "auto" && sig === saveState.sig){ saveState.dirty = false; return true; }
+  clearTimeout(saveState.timer);
+  saveState.busy = true; saveState.error = ""; renderSave();
+  try {
+    const res = await fetch(SAVE_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, redirect:"follow",
+      body: JSON.stringify({ id: currentId(), trigger, report: fullReport(), html: reportHtml() }) });
+    let data = null; try { data = await res.json(); } catch {}
+    if (!data || !data.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    saveState.sig = sig; saveState.at = new Date(); saveState.dirty = saveSig() !== sig;
+    return true;
+  } catch (e){ saveState.error = (e && e.message) || String(e); return false; }
+  finally { saveState.busy = false; renderSave(); }
+}
+function saveOnLeave(){
+  if (!SAVE_URL || !saveState.dirty || !worthSaving() || !navigator.sendBeacon) return;
+  const r = fullReport(); r.log = r.log.slice(0, 40);   // beacons are capped at 64 KB, so no HTML here
+  const body = JSON.stringify({ id: currentId(), trigger:"pagehide", report: r });
+  try { if (navigator.sendBeacon(SAVE_URL, new Blob([body], { type:"text/plain;charset=utf-8" }))){ saveState.dirty = false; saveState.sig = saveSig(); } } catch {}
+}
+function renderSave(){
+  const on = !!SAVE_URL;
+  $("#saveNotice").hidden = !on;
+  $("#privacyNote").textContent = on
+    ? "Test results, including any name, email and notes entered in step 4, are saved to a private results log kept by this tool's owner."
+    : "Runs entirely in your browser. Nothing about your headset is uploaded.";
+  $("#saveHint").textContent = on ? " Every report is also saved to the results log." : "";
+  const el = $("#saveStatus");
+  el.hidden = !on; if (!on) return;
+  el.className = "save-status" + (saveState.error ? " err" : saveState.at && !saveState.dirty ? " ok" : "");
+  el.textContent = saveState.busy ? "Saving to the results log…"
+    : saveState.error ? `Couldn't save to the results log: ${saveState.error}`
+    : saveState.at ? (saveState.dirty ? `Saved at ${saveState.at.toLocaleTimeString()}. Newer results will be saved shortly.` : `Saved to the results log at ${saveState.at.toLocaleTimeString()}.`)
+    : worthSaving() ? "Results will be saved to the results log shortly."
+    : "Results are saved to the results log once you test a headset.";
+}
+
 /* ---------- Wiring ---------- */
 $("#choose").addEventListener("click", chooseHeadset);
 $("#devlist").addEventListener("click", async e => {
@@ -1115,18 +1180,20 @@ $("#host").addEventListener("click", e => {
   if (a === "end") applyHost({ ring:false, offHook:false, mute:false, hold:false }, "Call ended in page");
 });
 $("#clearLog").addEventListener("click", () => { logRows.length = 0; renderLog(); });
-$("#resetTests").addEventListener("click", () => { if (!S) return; for (const k in S.tests) S.tests[k] = false; renderPlate(); renderRail(); renderReport(); toast("Call control results reset."); });
-$("#copySummary").addEventListener("click", () => copy(summaryText()));
-$("#downloadCsv").addEventListener("click", () => download(fileBase() + ".csv", csvRow(), "text/csv"));
-$("#downloadJson").addEventListener("click", () => download(fileBase() + ".json", JSON.stringify(fullReport(), null, 2), "application/json"));
+$("#resetTests").addEventListener("click", () => { if (!S) return; for (const k in S.tests) S.tests[k] = false; renderPlate(); renderRail(); renderReport(); scheduleSave(); toast("Call control results reset."); });
+$("#copySummary").addEventListener("click", () => { copy(summaryText()); saveReport("copy-summary"); });
+$("#downloadCsv").addEventListener("click", () => { download(fileBase() + ".csv", csvRow(), "text/csv"); saveReport("download-csv"); });
+$("#downloadJson").addEventListener("click", () => { download(fileBase() + ".json", JSON.stringify(fullReport(), null, 2), "application/json"); saveReport("download-json"); });
 for (const [id, k] of [["#rPlatform","platform"],["#rOther","other"],["#rTester","tester"],["#rEmail","email"]]){ const v = store.get(k); if (v) $(id).value = v; }
 if (!$("#rPlatform").value) $("#rPlatform").value = "storm-dta";
-const saveForm = () => { store.set("platform", $("#rPlatform").value); store.set("other", $("#rOther").value); store.set("tester", $("#rTester").value); store.set("email", $("#rEmail").value); renderReport(); };
+const saveForm = () => { store.set("platform", $("#rPlatform").value); store.set("other", $("#rOther").value); store.set("tester", $("#rTester").value); store.set("email", $("#rEmail").value); renderReport(); scheduleSave(); };
 $("#reportForm").addEventListener("input", saveForm);
 $("#reportForm").addEventListener("change", saveForm);
-$("#dlReport").addEventListener("click", () => { downloadReport(); toast("Report downloaded."); });
-$("#emailReport").addEventListener("click", emailReport);
-$("#copyEmail").addEventListener("click", async () => { const e = emailParts(); const text = `Subject: ${e.subject}\n\n${e.body}`; try { await navigator.clipboard.writeText(text); toast("Email text copied."); } catch { copy(text); } });
+$("#dlReport").addEventListener("click", () => { downloadReport(); saveReport("download-report"); toast("Report downloaded."); });
+$("#emailReport").addEventListener("click", () => { emailReport(); saveReport("email-report"); });
+$("#copyEmail").addEventListener("click", async () => { const e = emailParts(); const text = `Subject: ${e.subject}\n\n${e.body}`; saveReport("copy-email"); try { await navigator.clipboard.writeText(text); toast("Email text copied."); } catch { copy(text); } });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveOnLeave(); });
+window.addEventListener("pagehide", saveOnLeave);
 
 if (B.hid){
   navigator.hid.addEventListener("connect", async () => {

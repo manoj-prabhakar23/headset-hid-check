@@ -380,6 +380,7 @@ let remembered = [];        // grouped devices the browser remembers
 let lastSessionKey = null;
 const host = { ring:false, offHook:false, mute:false, hold:false };
 const logRows = [];
+const eventRows = [];   // call-control events only; background chatter never pushes these out
 
 const KEYS = [
   {id:"answer", label:"Answer", req:true, cap:c=>c.hook, icon:'<path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>'},
@@ -487,7 +488,7 @@ function writeBits(buf, off, size, val){
   }
 }
 function arrayUsage(f, v){
-  if (v == null || v < f.lmin || v > f.lmax) return null;
+  if (v == null || v === 0 || v < f.lmin || v > f.lmax) return null;   // headsets use 0 for "nothing pressed" in list-style fields
   const idx = v - f.lmin; let u = null;
   if (f.list && f.list.length) u = f.list[idx];
   else if (f.umin != null){ u = f.umin + idx; if (f.umax != null && u > f.umax) return null; }
@@ -589,7 +590,7 @@ async function startSession(g){
               lastVal:new Map(), lastRaw:new Map(), arrPrev:new Map(), riseAt:new Map(), outBufs:new Map(), lastSendAt:-1e9,
               tests:{ answer:false, hangup:false, mute:false, volUp:false, volDown:false, flash:false, reject:false, redial:false, prog:false },
               confirm:{ ring:"", light:"", muteLight:"" },
-              handlers:[], connected:true, startedAt:new Date(), reportId:newId() };
+              handlers:[], connected:true, startedAt:new Date(), reportId:newId(), vendorRow:new Map() };
   for (const d of devices){
     try { if (!d.opened) await d.open(); s.opened.push(d); }
     catch (e){ s.openErrors.push(`${e.name}: ${e.message}`); }
@@ -723,16 +724,34 @@ function onInput(e, di){
       S.arrPrev.set(key, nowSet);
     }
   }
-  addLog({ dir:"in", rid:e.reportId, bytes, prev, meaning: out.join("; ") || (rep ? "No change in known controls" : "") });
+  const meaning = out.join("; ") || (rep ? "No change in known controls" : "");
+  const vendorOnly = !rep || (rep.fields.length > 0 && rep.fields.every(f => { const u = f.isArray ? (f.list && f.list.length ? f.list[0] : f.umin) : f.usage; return u != null && u >= 0xFF000000; }));
+  if (vendorOnly) logVendor(key, e.reportId, bytes, prev, rep ? meaning.replace(/^No change in known controls$/, "") : "Report ID not described in the descriptor");
+  else addLog({ dir:"in", rid:e.reportId, bytes, prev, meaning });
   renderPlate(); renderRail(); renderReport(); scheduleSave();
 }
 
 /* ---------- Log ---------- */
+const stamp = () => { const d = new Date(); return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0"); };
 function addLog(r){
-  const d = new Date();
-  r.time = d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+  r.time = stamp();
   logRows.unshift(r); if (logRows.length > 300) logRows.pop();
+  if (r.dir !== "in" || (!r.vendor && r.meaning && r.meaning !== "No change in known controls")){
+    eventRows.unshift({ ...r }); if (eventRows.length > 300) eventRows.pop();
+  }
   renderLog();
+}
+// Vendor-defined reports that repeat quickly (status chatter from some bases and dongles) share one log row,
+// so they can't push call-control events out of the log. An isolated vendor report still gets its own row.
+function logVendor(key, rid, bytes, prev, meaning){
+  const last = S.vendorRow.get(key), t = now();
+  if (last && logRows.includes(last) && t - last.at < 1500){
+    last.count++; last.at = t; last.prev = last.bytes; last.bytes = bytes; last.time = stamp();
+    last.meaning = `Repeated vendor-defined report, ${last.count} times (latest bytes shown)`;
+    renderLog(); return;
+  }
+  const row = { dir:"in", rid, bytes, prev, vendor:true, count:1, at:t, meaning: meaning ? `${meaning} (vendor-defined)` : "Vendor-defined report" };
+  S.vendorRow.set(key, row); addLog(row);
 }
 function renderLog(){
   const body = $("#logBody");
@@ -941,7 +960,8 @@ function fullReport(){
       interfaces:S.devs.map(d => ({ opened:d.opened, collections:(d.collections || []).map(plainCollection) })) } : null,
     callControl: S ? { verdict:rv, tests:t, confirmed:{ ...S.confirm } } : null,
     platformCheck: platformCheck(),
-    log: logRows.slice(0, 200).map(r => ({ time:r.time, dir:r.dir, reportId:r.rid, bytes:r.bytes ? [...r.bytes].map(hb).join(" ") : null, meaning:r.meaning })) };
+    events: eventRows.map(r => ({ time:r.time, dir:r.dir, reportId:r.rid, bytes:r.bytes ? [...r.bytes].map(hb).join(" ") : null, meaning:r.meaning })),
+    log: logRows.slice(0, 300).map(r => ({ time:r.time, dir:r.dir, reportId:r.rid, bytes:r.bytes ? [...r.bytes].map(hb).join(" ") : null, meaning:r.meaning, ...(r.count > 1 ? { repeats:r.count } : {}) })) };
 }
 function download(name, text, type){
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
@@ -1084,6 +1104,7 @@ function reportHtml(){
     h.interfaces.forEach((itf, ii) => itf.collections.forEach((col, i) => walk(col, ii, String(i + 1))));
     desc = `<table><thead><tr><th>Interface</th><th>Collection</th><th>Usage page:usage</th><th>Reports</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
   }
+  const evTable = r.events && r.events.length ? `<table><thead><tr><th>Time</th><th>Dir</th><th>Report ID</th><th>Bytes</th><th>Meaning</th></tr></thead><tbody>${r.events.map(l => `<tr><td class="mono">${esc(l.time)}</td><td>${esc(l.dir)}</td><td class="mono">${l.reportId ?? ""}</td><td class="mono">${esc(l.bytes || "")}</td><td>${esc(l.meaning || "")}</td></tr>`).join("")}</tbody></table>` : "<p>No call-control events were recorded.</p>";
   const log = r.log.length ? `<table><thead><tr><th>Time</th><th>Dir</th><th>Report ID</th><th>Bytes</th><th>Meaning</th></tr></thead><tbody>${r.log.map(l => `<tr><td class="mono">${esc(l.time)}</td><td>${esc(l.dir)}</td><td class="mono">${l.reportId ?? ""}</td><td class="mono">${esc(l.bytes || "")}</td><td>${esc(l.meaning || "")}</td></tr>`).join("")}</tbody></table>` : "<p>No reports were logged.</p>";
   const json = JSON.stringify(r, null, 2);
   return `<!doctype html>
@@ -1128,8 +1149,12 @@ ${kv([["Browser", `${b.name} ${b.version || ""}`], ["Operating system", b.os || 
 
 ${h ? `<h2>HID descriptor</h2><div class="wrap-x">${desc}</div>` : ""}
 
+<h2>Call control events</h2>
+<p class="meta">Every button press decoded from the standard telephony and consumer sections, and every call state the page sent to the headset, newest first. Vendor-defined chatter is left out here.</p>
+<div class="wrap-x">${evTable}</div>
+
 <h2>Report log</h2>
-<p class="meta">Bytes are the report payload after the report ID, as delivered to the WebHID <span class="mono">inputreport</span> event or passed to <span class="mono">sendReport()</span>. Newest first.</p>
+<p class="meta">Bytes are the report payload after the report ID, as delivered to the WebHID <span class="mono">inputreport</span> event or passed to <span class="mono">sendReport()</span>. Newest first. Vendor-defined reports that repeat within 1.5 seconds share one row with a count.</p>
 <div class="wrap-x">${log}</div>
 
 <h2>Raw data</h2>
@@ -1207,7 +1232,7 @@ async function saveReport(trigger){
 }
 function saveOnLeave(){
   if (!SAVE_URL || !saveState.dirty || !worthSaving() || !navigator.sendBeacon) return;
-  const r = fullReport(); r.log = r.log.slice(0, 40);   // beacons are capped at 64 KB, so no HTML here
+  const r = fullReport(); r.log = r.log.slice(0, 30); r.events = r.events.slice(0, 60);   // beacons are capped at 64 KB, so no HTML here
   const body = JSON.stringify({ id: currentId(), trigger:"pagehide", report: r });
   try { if (navigator.sendBeacon(SAVE_URL, new Blob([body], { type:"text/plain;charset=utf-8" }))){ saveState.dirty = false; saveState.sig = saveSig(); } } catch {}
 }
@@ -1245,7 +1270,7 @@ $("#host").addEventListener("click", e => {
   if (a === "hold") applyHost({ hold:!host.hold }, host.hold ? "Resumed in page" : "On hold in page");
   if (a === "end") applyHost({ ring:false, offHook:false, mute:false, hold:false }, "Call ended in page");
 });
-$("#clearLog").addEventListener("click", () => { logRows.length = 0; renderLog(); });
+$("#clearLog").addEventListener("click", () => { logRows.length = 0; eventRows.length = 0; renderLog(); });
 $("#confirmBox").addEventListener("change", e => {
   const sel = e.target.closest("select"); if (!sel || !S) return;
   S.confirm[sel.id.slice(3)] = sel.value;
